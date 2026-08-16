@@ -3,14 +3,29 @@ package com.currentguardian.optimization
 import com.currentguardian.model.PerformanceBaseline
 
 data class OptimizationVerification(
+
     val result: Result,
-    val cpuDelta: Int?,
-    val ramDeltaMb: Long?,
-    val temperatureDeltaC: Float?,
-    val latencyDeltaMs: Long?,
-    val jitterDeltaMs: Long?,
-    val fpsDelta: Double?,
-    val details: String
+
+    val cpuDelta:
+        Int?,
+
+    val ramDeltaMb:
+        Long?,
+
+    val temperatureDeltaC:
+        Float?,
+
+    val latencyDeltaMs:
+        Long?,
+
+    val jitterDeltaMs:
+        Long?,
+
+    val fpsDelta:
+        Double?,
+
+    val details:
+        String
 ) {
 
     enum class Result {
@@ -32,7 +47,8 @@ data class OptimizationVerification(
 
             after:
                 PerformanceBaseline
-        ): OptimizationVerification {
+        ):
+            OptimizationVerification {
 
             val cpuDelta =
                 delta(
@@ -40,25 +56,25 @@ data class OptimizationVerification(
                     after.cpu
                 )
 
-            val ramDelta =
+            val ramDeltaMb =
                 delta(
                     before.ramMb,
                     after.ramMb
                 )
 
-            val temperatureDelta =
+            val temperatureDeltaC =
                 delta(
                     before.temperatureC,
                     after.temperatureC
                 )
 
-            val latencyDelta =
+            val latencyDeltaMs =
                 delta(
                     before.latencyMs,
                     after.latencyMs
                 )
 
-            val jitterDelta =
+            val jitterDeltaMs =
                 delta(
                     before.jitterMs,
                     after.jitterMs
@@ -72,125 +88,243 @@ data class OptimizationVerification(
 
             if (
                 cpuDelta == null &&
-                ramDelta == null &&
-                temperatureDelta == null &&
-                latencyDelta == null &&
-                jitterDelta == null &&
+                ramDeltaMb == null &&
+                temperatureDeltaC == null &&
+                latencyDeltaMs == null &&
+                jitterDeltaMs == null &&
                 fpsDelta == null
             ) {
 
                 return OptimizationVerification(
+
                     result =
                         Result.INSUFFICIENT_DATA,
 
-                    cpuDelta = null,
+                    cpuDelta =
+                        null,
 
-                    ramDelta = null,
+                    ramDeltaMb =
+                        null,
 
-                    temperatureDeltaC = null,
+                    temperatureDeltaC =
+                        null,
 
-                    latencyDeltaMs = null,
+                    latencyDeltaMs =
+                        null,
 
-                    jitterDeltaMs = null,
+                    jitterDeltaMs =
+                        null,
 
-                    fpsDelta = null,
+                    fpsDelta =
+                        null,
 
                     details =
-                        "沒有足夠資料進行前後比較。"
+                        "沒有足夠資料進行最佳化前後比較。"
                 )
             }
 
-            var improvement = 0
-            var degradation = 0
+            var improvementCount =
+                0
+
+            var degradationCount =
+                0
 
             /*
-             * 這裡不把單一指標當作絕對答案。
-             * FPS 上升通常是正向。
-             * CPU、RAM、溫度、延遲、Jitter 下降通常是正向。
+             * FPS：
+             * 上升通常是正向。
+             * 明顯下降通常是負向。
              */
+            fpsDelta?.let {
 
-            if (
-                fpsDelta != null
-            ) {
+                when {
 
-                if (fpsDelta > 2.0)
-                    improvement++
+                    it > 2.0 ->
+                        improvementCount++
 
-                if (fpsDelta < -2.0)
-                    degradation++
+                    it < -2.0 ->
+                        degradationCount++
+                }
             }
 
-            if (
-                cpuDelta != null
-            ) {
+            /*
+             * CPU：
+             * 相同工作量下，下降通常較有利。
+             */
+            cpuDelta?.let {
 
-                if (cpuDelta < -5)
-                    improvement++
+                when {
 
-                if (cpuDelta > 5)
-                    degradation++
+                    it < -5 ->
+                        improvementCount++
+
+                    it > 5 ->
+                        degradationCount++
+                }
             }
 
-            if (
-                ramDelta != null
-            ) {
+            /*
+             * RAM：
+             * 這裡只比較「觀測結果」，
+             * 不代表 RAM 越低一定越好。
+             */
+            ramDeltaMb?.let {
 
-                if (ramDelta < -100)
-                    improvement++
+                when {
 
-                if (ramDelta > 100)
-                    degradation++
+                    it < -100 ->
+                        improvementCount++
+
+                    it > 100 ->
+                        degradationCount++
+                }
             }
 
-            if (
-                temperatureDelta != null
-            ) {
+            /*
+             * 溫度：
+             * 降低通常較有利。
+             */
+            temperatureDeltaC?.let {
 
-                if (temperatureDelta < -1f)
-                    improvement++
+                when {
 
-                if (temperatureDelta > 1f)
-                    degradation++
+                    it < -1f ->
+                        improvementCount++
+
+                    it > 1f ->
+                        degradationCount++
+                }
             }
 
-            if (
-                latencyDelta != null
-            ) {
+            /*
+             * RTT：
+             * 降低通常較有利。
+             */
+            latencyDeltaMs?.let {
 
-                if (latencyDelta < -5)
-                    improvement++
+                when {
 
-                if (latencyDelta > 5)
-                    degradation++
+                    it < -5L ->
+                        improvementCount++
+
+                    it > 5L ->
+                        degradationCount++
+                }
             }
 
-            if (
-                jitterDelta != null
-            ) {
+            /*
+             * Jitter：
+             * 降低通常較有利。
+             */
+            jitterDeltaMs?.let {
 
-                if (jitterDelta < -3)
-                    improvement++
+                when {
 
-                if (jitterDelta > 3)
-                    degradation++
+                    it < -3L ->
+                        improvementCount++
+
+                    it > 3L ->
+                        degradationCount++
+                }
             }
 
             val result =
                 when {
 
-                    improvement >=
-                        degradation + 2 ->
+                    improvementCount >=
+                        degradationCount + 2 ->
+
                         Result.IMPROVED
 
-                    degradation >=
-                        improvement + 2 ->
+                    degradationCount >=
+                        improvementCount + 2 ->
+
                         Result.DEGRADED
 
                     else ->
+
                         Result.NO_CLEAR_CHANGE
                 }
 
+            val details =
+                buildString {
+
+                    append(
+                        "optimization_verification"
+                    )
+
+                    append(
+                        "|improvement_count="
+                    )
+
+                    append(
+                        improvementCount
+                    )
+
+                    append(
+                        "|degradation_count="
+                    )
+
+                    append(
+                        degradationCount
+                    )
+
+                    append(
+                        "|cpu_delta="
+                    )
+
+                    append(
+                        cpuDelta
+                            ?: "UNKNOWN"
+                    )
+
+                    append(
+                        "|ram_delta_mb="
+                    )
+
+                    append(
+                        ramDeltaMb
+                            ?: "UNKNOWN"
+                    )
+
+                    append(
+                        "|temperature_delta_c="
+                    )
+
+                    append(
+                        temperatureDeltaC
+                            ?: "UNKNOWN"
+                    )
+
+                    append(
+                        "|latency_delta_ms="
+                    )
+
+                    append(
+                        latencyDeltaMs
+                            ?: "UNKNOWN"
+                    )
+
+                    append(
+                        "|jitter_delta_ms="
+                    )
+
+                    append(
+                        jitterDeltaMs
+                            ?: "UNKNOWN"
+                    )
+
+                    append(
+                        "|fps_delta="
+                    )
+
+                    append(
+                        fpsDelta
+                            ?: "UNKNOWN"
+                    )
+                }
+
             return OptimizationVerification(
+
                 result =
                     result,
 
@@ -198,34 +332,39 @@ data class OptimizationVerification(
                     cpuDelta,
 
                 ramDeltaMb =
-                    ramDelta,
+                    ramDeltaMb,
 
                 temperatureDeltaC =
-                    temperatureDelta,
+                    temperatureDeltaC,
 
                 latencyDeltaMs =
-                    latencyDelta,
+                    latencyDeltaMs,
 
                 jitterDeltaMs =
-                    jitterDelta,
+                    jitterDeltaMs,
 
                 fpsDelta =
                     fpsDelta,
 
                 details =
-                    "前後指標已完成比較。"
+                    details
             )
         }
 
         private fun delta(
-            before: Int?,
-            after: Int?
-        ): Int? {
+            before:
+                Int?,
+
+            after:
+                Int?
+        ):
+            Int? {
 
             if (
                 before == null ||
                 after == null
             ) {
+
                 return null
             }
 
@@ -233,14 +372,19 @@ data class OptimizationVerification(
         }
 
         private fun delta(
-            before: Long?,
-            after: Long?
-        ): Long? {
+            before:
+                Long?,
+
+            after:
+                Long?
+        ):
+            Long? {
 
             if (
                 before == null ||
                 after == null
             ) {
+
                 return null
             }
 
@@ -248,14 +392,19 @@ data class OptimizationVerification(
         }
 
         private fun delta(
-            before: Float?,
-            after: Float?
-        ): Float? {
+            before:
+                Float?,
+
+            after:
+                Float?
+        ):
+            Float? {
 
             if (
                 before == null ||
                 after == null
             ) {
+
                 return null
             }
 
@@ -263,14 +412,19 @@ data class OptimizationVerification(
         }
 
         private fun delta(
-            before: Double?,
-            after: Double?
-        ): Double? {
+            before:
+                Double?,
+
+            after:
+                Double?
+        ):
+            Double? {
 
             if (
                 before == null ||
                 after == null
             ) {
+
                 return null
             }
 
