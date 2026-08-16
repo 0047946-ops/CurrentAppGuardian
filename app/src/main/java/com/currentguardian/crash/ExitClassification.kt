@@ -1,0 +1,26 @@
+package com.currentguardian.crash
+
+enum class ExitClassification {
+
+    NORMAL_EXIT,
+
+    UNEXPECTED_EXIT,
+
+    PROCESS_DISAPPEARED,
+
+    ACTIVITY_DISAPPEARED,
+
+    ANR_SUSPECTED,
+
+    LOW_MEMORY_SUSPECTED,
+
+    THERMAL_SUSPECTED,
+
+    NETWORK_RELATED_SUSPECTED,
+
+    SYSTEM_TERMINATION_SUSPECTED,
+
+    CRASH_CONFIRMED,
+
+    UNKNOWN
+}
