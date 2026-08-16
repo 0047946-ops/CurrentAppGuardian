@@ -44,6 +44,15 @@
     </application>
 
 </manifest>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="local application performance monitoring and crash black box" />
+
+        </service>
+
+    </application>
+
+</manifest>
 
 <!-- app/src/main/res/values/styles.xml -->
 
