@@ -2,36 +2,66 @@ package com.currentguardian
 
 import android.app.*
 import android.content.*
-import android.net.*
 import android.os.*
 import androidx.core.app.NotificationCompat
-import com.currentguardian.blackbox.BlackBox
+import com.currentguardian.blackbox.IncidentManager
+import com.currentguardian.monitor.AdaptiveMonitor
+import com.currentguardian.monitor.EventMonitor
 import com.currentguardian.monitor.SystemSnapshot
 import kotlinx.coroutines.*
-import kotlin.math.max
 
 class GuardianService : Service() {
 
-    private val scope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Default
-    )
+    private val scope =
+        CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.Default
+        )
 
-    private lateinit var blackBox: BlackBox
-    private lateinit var detector: CurrentAppDetector
+    private lateinit var detector:
+        CurrentAppDetector
 
-    private var abnormalScore = 0
+    private lateinit var incidentManager:
+        IncidentManager
+
+    private lateinit var eventMonitor:
+        EventMonitor
+
+    private lateinit var adaptiveMonitor:
+        AdaptiveMonitor
 
     override fun onCreate() {
+
         super.onCreate()
 
-        blackBox = BlackBox(this)
-        detector = CurrentAppDetector(this)
+        detector =
+            CurrentAppDetector(this)
+
+        incidentManager =
+            IncidentManager(this)
+
+        eventMonitor =
+            EventMonitor(
+                this,
+                incidentManager
+            )
+
+        adaptiveMonitor =
+            AdaptiveMonitor()
 
         createNotificationChannel()
 
         startForeground(
             1001,
-            buildNotification("管家監測中")
+            buildNotification(
+                "黑盒管家監測中"
+            )
+        )
+
+        incidentManager.mark(
+            type = "GUARDIAN_START",
+            detail =
+                "GuardianService started"
         )
 
         startMonitoring()
@@ -43,90 +73,103 @@ class GuardianService : Service() {
 
             while (isActive) {
 
-                val app = detector.getCurrentApp()
-                val snapshot = SystemSnapshot.collect(
-                    this@GuardianService
+                val currentApp =
+                    detector.getCurrentApp()
+
+                val snapshot =
+                    SystemSnapshot.collect(
+                        this@GuardianService
+                    )
+
+                eventMonitor.checkCurrentApp(
+                    currentApp.packageName
                 )
 
-                val record = buildString {
+                val level =
+                    adaptiveMonitor.evaluate(
+                        cpu =
+                            snapshot.cpuLoad,
 
-                    append("time=")
-                    append(System.currentTimeMillis())
-                    append('\n')
+                        ramMb =
+                            snapshot.availableRamMb,
 
-                    append("current_app=")
-                    append(app.packageName ?: "unknown")
-                    append('\n')
+                        temperature =
+                            snapshot.temperatureC,
 
-                    append("app_label=")
-                    append(app.label ?: "unknown")
-                    append('\n')
+                        networkValidated =
+                            snapshot.networkValidated
+                    )
 
-                    append("cpu_load=")
-                    append(snapshot.cpuLoad)
-                    append('\n')
+                incidentManager.recordRaw(
+                    buildString {
 
-                    append("available_ram_mb=")
-                    append(snapshot.availableRamMb)
-                    append('\n')
+                        append(
+                            "SNAPSHOT|"
+                        )
 
-                    append("temperature_c=")
-                    append(snapshot.temperatureC)
-                    append('\n')
+                        append(
+                            "time=" +
+                                System.currentTimeMillis()
+                        )
 
-                    append("battery_percent=")
-                    append(snapshot.batteryPercent)
-                    append('\n')
+                        append(
+                            "|package=" +
+                                (
+                                    currentApp.packageName
+                                        ?: "unknown"
+                                )
+                        )
 
-                    append("network=")
-                    append(snapshot.networkType)
-                    append('\n')
+                        append(
+                            "|label=" +
+                                (
+                                    currentApp.label
+                                        ?: "unknown"
+                                )
+                        )
 
-                    append("network_validated=")
-                    append(snapshot.networkValidated)
-                    append('\n')
-                }
+                        append(
+                            "|cpu=" +
+                                snapshot.cpuLoad
+                        )
 
-                blackBox.record(record)
+                        append(
+                            "|ram=" +
+                                snapshot.availableRamMb
+                        )
 
-                abnormalScore =
-                    calculateAbnormalScore(snapshot)
+                        append(
+                            "|temp=" +
+                                snapshot.temperatureC
+                        )
 
-                val interval =
-                    when {
-                        abnormalScore >= 7 -> 250L
-                        abnormalScore >= 4 -> 750L
-                        else -> 3000L
+                        append(
+                            "|battery=" +
+                                snapshot.batteryPercent
+                        )
+
+                        append(
+                            "|network=" +
+                                snapshot.networkType
+                        )
+
+                        append(
+                            "|validated=" +
+                                snapshot.networkValidated
+                        )
+
+                        append(
+                            "|level=" +
+                                level.name
+                        )
                     }
+                )
 
-                delay(interval)
+                delay(
+                    adaptiveMonitor.intervalMs()
+                )
             }
         }
-    }
-
-    private fun calculateAbnormalScore(
-        snapshot: SystemSnapshot
-    ): Int {
-
-        var score = 0
-
-        if (snapshot.cpuLoad >= 90) {
-            score += 2
-        }
-
-        if (snapshot.availableRamMb <= 512) {
-            score += 3
-        }
-
-        if (snapshot.temperatureC >= 43f) {
-            score += 2
-        }
-
-        if (!snapshot.networkValidated) {
-            score += 1
-        }
-
-        return score
     }
 
     private fun buildNotification(
@@ -137,10 +180,13 @@ class GuardianService : Service() {
             this,
             "guardian"
         )
-            .setContentTitle("當前應用效能管家")
+            .setContentTitle(
+                "當前應用效能管家"
+            )
             .setContentText(text)
             .setSmallIcon(
-                android.R.drawable.ic_menu_info_details
+                android.R.drawable
+                    .ic_menu_info_details
             )
             .setOngoing(true)
             .build()
@@ -148,30 +194,61 @@ class GuardianService : Service() {
 
     private fun createNotificationChannel() {
 
-        if (Build.VERSION.SDK_INT >= 26) {
+        if (
+            Build.VERSION.SDK_INT >= 26
+        ) {
 
-            val channel = NotificationChannel(
-                "guardian",
-                "效能管家監測",
-                NotificationManager.IMPORTANCE_LOW
-            )
+            val channel =
+                NotificationChannel(
+                    "guardian",
+                    "效能管家監測",
+                    NotificationManager
+                        .IMPORTANCE_LOW
+                )
 
             getSystemService(
                 NotificationManager::class.java
-            ).createNotificationChannel(channel)
+            ).createNotificationChannel(
+                channel
+            )
         }
+    }
+
+    override fun onTaskRemoved(
+        rootIntent: Intent?
+    ) {
+
+        incidentManager.mark(
+            type = "GUARDIAN_TASK_REMOVED",
+            detail =
+                "Task removed by system/user",
+            severity = 2
+        )
+
+        super.onTaskRemoved(
+            rootIntent
+        )
     }
 
     override fun onDestroy() {
 
-        blackBox.flush()
+        incidentManager.mark(
+            type = "GUARDIAN_DESTROY",
+            detail =
+                "GuardianService onDestroy"
+        )
+
+        incidentManager
+            .recentEvents()
 
         scope.cancel()
 
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
         return null
     }
 }
