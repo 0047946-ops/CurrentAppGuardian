@@ -1,20 +1,20 @@
 package com.currentguardian.blackbox
 
 import com.currentguardian.model.IncidentContext
+import com.currentguardian.model.RiskState
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class PreCrashRecorder(
-    private val incidentManager: IncidentManager
+    private val incidentManager:
+        IncidentManager
 ) {
 
     private var sealed =
         false
 
     fun checkAndSeal(
-        context: IncidentContext
+        context:
+            IncidentContext
     ): File? {
 
         if (sealed) {
@@ -22,29 +22,30 @@ class PreCrashRecorder(
         }
 
         if (
-            !context.riskLevel.isCritical()
+            context.riskLevel !=
+                RiskState.Level.CRITICAL
         ) {
             return null
         }
 
         sealed = true
 
-        val file =
-            incidentManager
-                .sealIncident(
-                    "PRE_CRASH_CRITICAL"
-                )
-
+        /*
+         * 先把完整 Context 寫入現有事件鏈，
+         * 再進行封存。
+         */
         incidentManager.recordRaw(
             "PRE_CRASH_CONTEXT|" +
                 context.serialize()
         )
 
-        return file
+        return incidentManager
+            .sealIncident(
+                "PRE_CRASH_CRITICAL"
+            )
     }
 
     fun reset() {
-
         sealed = false
     }
 }
