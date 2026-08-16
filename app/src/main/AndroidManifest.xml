@@ -1,21 +1,36 @@
-<!-- app/src/main/AndroidManifest.xml -->
+<?xml version="1.0" encoding="utf-8"?>
 
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+    <!-- 目前 App / 使用狀態觀測 -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS" />
 
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 網路狀態 -->
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission
+        android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission
+        android:name="android.permission.INTERNET" />
+
+    <!-- 前景服務 -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Android 13+ 通知 -->
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
-        android:label="當前應用效能管家"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.CurrentGuardian">
 
@@ -24,8 +39,11 @@
             android:exported="true">
 
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action
+                    android:name="android.intent.action.MAIN" />
+
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
         </activity>
@@ -44,192 +62,3 @@
     </application>
 
 </manifest>
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="local application performance monitoring and crash black box" />
-
-        </service>
-
-    </application>
-
-</manifest>
-
-<!-- app/src/main/res/values/styles.xml -->
-
-<resources>
-
-    <style
-        name="Theme.CurrentGuardian"
-        parent="Theme.Material3.DayNight.NoActionBar">
-
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-
-    </style>
-
-</resources>
-
-<!-- app/src/main/res/values/strings.xml -->
-
-<resources>
-    <string name="app_name">當前應用效能管家</string>
-</resources>
-
-<!-- app/src/main/res/layout/activity_main.xml -->
-
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-    <LinearLayout
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content">
-
-        <TextView
-            android:id="@+id/titleText"
-            android:text="當前應用效能管家"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
-
-        <TextView
-            android:id="@+id/statusText"
-            android:text="尚未啟動"
-            android:textSize="16sp"
-            android:layout_marginTop="16dp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
-
-        <Button
-            android:id="@+id/usageButton"
-            android:text="開啟使用狀態存取權限"
-            android:layout_marginTop="20dp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
-
-        <Button
-            android:id="@+id/startButton"
-            android:text="啟動管家"
-            android:layout_marginTop="12dp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
-
-        <Button
-            android:id="@+id/stopButton"
-            android:text="停止管家"
-            android:layout_marginTop="12dp"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
-
-    </LinearLayout>
-
-</ScrollView>
-
-// app/src/main/java/com/currentguardian/MainActivity.kt
-
-package com.currentguardian
-
-import android.Manifest
-import android.app.AppOpsManager
-import android.content.Context
-import android.content.Intent
-import android.os.Bundle
-import android.provider.Settings
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
-import com.currentguardian.databinding.ActivityMainBinding
-
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityMainBinding
-
-    private val notificationPermission =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) {
-            updateStatus()
-        }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        binding.usageButton.setOnClickListener {
-            startActivity(
-                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-            )
-        }
-
-        binding.startButton.setOnClickListener {
-            startGuardian()
-        }
-
-        binding.stopButton.setOnClickListener {
-            stopService(
-                Intent(this, GuardianService::class.java)
-            )
-            updateStatus()
-        }
-
-        updateStatus()
-    }
-
-    private fun startGuardian() {
-
-        if (!hasUsageAccess()) {
-            binding.statusText.text =
-                "請先開啟「使用狀態存取」權限。"
-            return
-        }
-
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            notificationPermission.launch(
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        }
-
-        val intent = Intent(
-            this,
-            GuardianService::class.java
-        )
-
-        androidx.core.content.ContextCompat.startForegroundService(
-            this,
-            intent
-        )
-
-        binding.statusText.text = "管家已啟動"
-    }
-
-    private fun hasUsageAccess(): Boolean {
-
-        val appOps =
-            getSystemService(Context.APP_OPS_SERVICE)
-                    as AppOpsManager
-
-        val mode =
-            appOps.unsafeCheckOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                packageName
-            )
-
-        return mode == AppOpsManager.MODE_ALLOWED
-    }
-
-    private fun updateStatus() {
-
-        binding.statusText.text =
-            if (hasUsageAccess()) {
-                "使用狀態權限：已授權"
-            } else {
-                "使用狀態權限：尚未授權"
-            }
-    }
-}
