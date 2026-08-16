@@ -1,8 +1,7 @@
 package com.currentguardian.phase8
 
 import com.currentguardian.blackbox.DualEvidenceVault
-import com.currentguardian.model.SystemSnapshot
-import java.util.concurrent.CopyOnWriteArrayList
+import com.currentguardian.monitor.SystemSnapshot
 
 class StabilitySession(
     private val evidence:
@@ -13,7 +12,7 @@ class StabilitySession(
         System.currentTimeMillis()
 
     private val samples =
-        CopyOnWriteArrayList<SystemSnapshot>()
+        mutableListOf<SystemSnapshot>()
 
     private var completed =
         false
@@ -32,7 +31,9 @@ class StabilitySession(
         )
 
         evidence.recordGuardian(
-            buildRecord(snapshot)
+            buildRecord(
+                snapshot
+            )
         )
     }
 
@@ -75,7 +76,9 @@ class StabilitySession(
         if (samples.isEmpty()) {
 
             return StabilityResult(
-                passed = false,
+                passed =
+                    false,
+
                 reason =
                     "沒有取得任何穩定性樣本。"
             )
@@ -87,20 +90,44 @@ class StabilitySession(
         val last =
             samples.last()
 
-        val ramGrowth =
-            first.availableRamMb -
-                last.availableRamMb
+        /*
+         * availableRamMb 是「可用 RAM」。
+         * 因此：
+         *
+         * first - last > 0
+         * 表示可用 RAM 下降。
+         *
+         * 這裡不把它直接稱為 memory leak，
+         * 只能稱為「可用 RAM 下降」。
+         */
+        val availableRamDropMb =
+            (
+                first.availableRamMb -
+                    last.availableRamMb
+            )
+                .coerceAtLeast(0L)
 
         val temperatureRise =
-            last.temperatureC -
-                first.temperatureC
+            (
+                last.temperatureC -
+                    first.temperatureC
+            )
+                .coerceAtLeast(0f)
 
+        /*
+         * 這只是 P8 初篩，
+         * 不是最終硬體健康判定。
+         */
         val healthy =
-            ramGrowth < 1024 &&
-            temperatureRise < 15f
+            availableRamDropMb <
+                1024L &&
+            temperatureRise <
+                15f
 
         return StabilityResult(
-            passed = healthy,
+            passed =
+                healthy,
+
             reason =
                 buildString {
 
@@ -113,15 +140,15 @@ class StabilitySession(
                     )
 
                     append(
-                        ";ram_delta="
+                        ";available_ram_drop_mb="
                     )
 
                     append(
-                        ramGrowth
+                        availableRamDropMb
                     )
 
                     append(
-                        ";temperature_delta="
+                        ";temperature_rise="
                     )
 
                     append(
@@ -132,6 +159,10 @@ class StabilitySession(
     }
 
     fun finish() {
+
+        if (completed) {
+            return
+        }
 
         completed =
             true
