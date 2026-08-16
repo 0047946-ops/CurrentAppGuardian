@@ -2,168 +2,272 @@ package com.currentguardian.monitor
 
 import android.content.Context
 import com.currentguardian.blackbox.IncidentManager
-import com.currentguardian.model.RiskState
-import com.currentguardian.network.NetworkQualityMonitor
-import com.currentguardian.network.NetworkTransitionDetector
+import com.currentguardian.model.PerformanceSnapshot
+import com.currentguardian.model.SystemSnapshot
 
 class PerformanceMonitorCoordinator(
-    context: Context,
-    incidentManager: IncidentManager
+    private val context: Context,
+    private val incidentManager: IncidentManager
 ) {
 
     private val sampler =
-        PerformanceSampler(
-            context =
-                context,
+        PerformanceSampler(context)
 
-            incidentManager =
-                incidentManager
-        )
+    private val stallMonitor =
+        StallMonitor()
 
-    private val networkQuality =
-        NetworkQualityMonitor()
+    private val adaptiveMonitor =
+        AdaptiveMonitor()
 
-    private val networkTransition =
-        NetworkTransitionDetector()
-
-    private val sampling =
+    private val adaptiveSamplingController =
         AdaptiveSamplingController()
 
-    private val riskAnalyzer =
-        UniversalRiskAnalyzer()
-
-    private var currentNetwork =
-        "UNKNOWN"
-
-    private var networkValidated =
-        false
-
-    fun updateNetwork(
-        type: String,
-        validated: Boolean
-    ) {
-
-        currentNetwork =
-            type
-
-        networkValidated =
-            validated
-
-        val transition =
-            networkTransition.update(
-                type
-            )
-
-        when (
-            transition
-        ) {
-
-            is NetworkTransitionDetector
-                .Transition.CHANGED -> {
-
-                incidentManager.recordRaw(
-                    "NETWORK_TRANSITION" +
-                        "|from=" +
-                        transition.from +
-                        "|to=" +
-                        transition.to +
-                        "|time=" +
-                        System.currentTimeMillis()
-                )
-            }
-
-            NetworkTransitionDetector
-                .Transition.NONE -> {
-            }
-        }
-    }
+    private var lastSnapshot:
+        PerformanceSnapshot? = null
 
     fun sample(
         appInForeground: Boolean
-    ) {
-
-        val latencyData =
-            networkQuality.measure()
-
-        val latency =
-            latencyData.first
-
-        val jitter =
-            latencyData.second
+    ): PerformanceSnapshot {
 
         val snapshot =
-            sampler.sample(
-                networkType =
-                    currentNetwork,
+            sampler.sample()
 
-                networkValidated =
-                    networkValidated,
+        lastSnapshot =
+            snapshot
 
-                latencyMs =
-                    latency,
-
-                jitterMs =
-                    jitter
+        val stall =
+            stallMonitor.evaluate(
+                snapshot
             )
 
-        val risk =
-            riskAnalyzer.analyze(
-                cpu =
-                    snapshot.cpuLoadPercent,
+        adaptiveMonitor.update(
+            snapshot =
+                snapshot,
 
-                availableRamMb =
-                    snapshot.availableRamMb,
+            stall =
+                stall,
 
-                temperatureC =
-                    snapshot.temperatureC,
+            appInForeground =
+                appInForeground
+        )
 
-                batteryPercent =
-                    snapshot.batteryPercent,
+        adaptiveSamplingController.update(
+            snapshot =
+                snapshot,
 
-                networkType =
-                    snapshot.networkType,
-
-                networkValidated =
-                    snapshot.networkValidated
-            )
-
-        sampling.update(
-            riskState =
-                risk,
+            stall =
+                stall,
 
             appInForeground =
                 appInForeground
         )
 
         incidentManager.recordRaw(
-            "RISK_RESULT" +
-                "|score=" +
-                risk.score +
-                "|level=" +
-                risk.level.name +
-                "|reasons=" +
-                risk.reasons.joinToString(",")
+            buildPerformanceRecord(
+                snapshot =
+                    snapshot,
+
+                stall =
+                    stall
+            )
+        )
+
+        return snapshot
+    }
+
+    fun collectSystemSnapshot():
+        SystemSnapshot {
+
+        val snapshot =
+            SystemSnapshot.collect(
+                context
+            )
+
+        incidentManager.recordRaw(
+            buildSystemRecord(
+                snapshot
+            )
+        )
+
+        return snapshot
+    }
+
+    fun updateNetwork(
+        type: String,
+        validated: Boolean
+    ) {
+
+        incidentManager.recordRaw(
+            "NETWORK_STATE" +
+                "|type=" +
+                type.safe() +
+                "|validated=" +
+                validated +
+                "|time=" +
+                System.currentTimeMillis()
         )
     }
 
-    fun currentIntervalMs():
+    fun currentSnapshot():
+        PerformanceSnapshot? {
+
+        return lastSnapshot
+    }
+
+    fun monitoringIntervalMs():
         Long {
 
-        return sampling.intervalMs()
+        return adaptiveSamplingController
+            .currentIntervalMs()
     }
 
-    fun currentMode():
-        AdaptiveSamplingController.Mode {
+    private fun buildPerformanceRecord(
+        snapshot:
+            PerformanceSnapshot,
 
-        return sampling.mode
+        stall:
+            StallState
+    ): String {
+
+        return buildString {
+
+            append(
+                "PERFORMANCE_SAMPLE"
+            )
+
+            append(
+                "|time="
+            )
+
+            append(
+                System.currentTimeMillis()
+            )
+
+            append(
+                "|cpu="
+            )
+
+            append(
+                snapshot.cpuUsagePercent
+            )
+
+            append(
+                "|ram_mb="
+            )
+
+            append(
+                snapshot.ramUsedMb
+            )
+
+            append(
+                "|fps="
+            )
+
+            append(
+                snapshot.fps
+            )
+
+            append(
+                "|frame_time="
+            )
+
+            append(
+                snapshot.frameTimeMs
+            )
+
+            append(
+                "|stall="
+            )
+
+            append(
+                stall.name
+            )
+        }
     }
 
-    fun reset() {
+    private fun buildSystemRecord(
+        snapshot:
+            SystemSnapshot
+    ): String {
 
-        networkQuality.reset()
+        return buildString {
 
-        networkTransition.reset()
+            append(
+                "SYSTEM_SAMPLE"
+            )
 
-        riskAnalyzer.reset()
+            append(
+                "|time="
+            )
+
+            append(
+                System.currentTimeMillis()
+            )
+
+            append(
+                "|cpu="
+            )
+
+            append(
+                snapshot.cpuLoad
+            )
+
+            append(
+                "|available_ram_mb="
+            )
+
+            append(
+                snapshot.availableRamMb
+            )
+
+            append(
+                "|temperature_c="
+            )
+
+            append(
+                snapshot.temperatureC
+            )
+
+            append(
+                "|battery_percent="
+            )
+
+            append(
+                snapshot.batteryPercent
+            )
+
+            append(
+                "|network="
+            )
+
+            append(
+                snapshot.networkType.safe()
+            )
+
+            append(
+                "|network_validated="
+            )
+
+            append(
+                snapshot.networkValidated
+            )
+        }
+    }
+
+    private fun String.safe():
+        String {
+
+        return replace(
+            "|",
+            "/"
+        )
+            .replace(
+                "\n",
+                " "
+            )
+            .replace(
+                "\r",
+                " "
+            )
     }
 }
