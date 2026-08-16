@@ -5,18 +5,29 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 
-class DualBlackBox(
-    context: Context,
-    private val ringCapacity: Int = 300
+class DualBlackBox private constructor(
+    private val root: File,
+    private val ringCapacity: Int
 ) {
 
-    private val root =
+    constructor(
+        context: Context,
+        ringCapacity: Int = 300
+    ) : this(
         File(
             context.filesDir,
             "guardian_blackbox"
-        ).apply {
-            mkdirs()
-        }
+        ),
+        ringCapacity
+    )
+
+    constructor(
+        root: File,
+        ringCapacity: Int = 300
+    ) : this(
+        root = root,
+        ringCapacity = ringCapacity
+    )
 
     private val incidentDirectory =
         File(
@@ -40,30 +51,31 @@ class DualBlackBox(
     private val lock =
         Any()
 
+    init {
+        root.mkdirs()
+
+        if (!journal.exists()) {
+            journal.createNewFile()
+        }
+    }
+
     fun record(
         line: String
     ) {
 
         synchronized(lock) {
 
-            addToRing(line)
+            if (
+                ring.size >=
+                ringCapacity
+            ) {
+                ring.removeFirst()
+            }
+
+            ring.addLast(line)
 
             appendPersistent(line)
         }
-    }
-
-    private fun addToRing(
-        line: String
-    ) {
-
-        if (
-            ring.size >=
-            ringCapacity
-        ) {
-            ring.removeFirst()
-        }
-
-        ring.addLast(line)
     }
 
     private fun appendPersistent(
@@ -88,9 +100,12 @@ class DualBlackBox(
                 output.flush()
             }
 
-        } catch (_: Exception) {
+        } catch (
+            _: Exception
+        ) {
             /*
-             * 黑盒 I/O 失敗不能反殺管家。
+             * 黑盒寫入失敗不能反過來
+             * 把管家程序殺掉。
              */
         }
     }
@@ -104,10 +119,8 @@ class DualBlackBox(
     }
 
     fun preserveIncident(
-        classification:
-            String,
-        finalState:
-            String
+        classification: String,
+        finalState: String
     ): File? {
 
         synchronized(lock) {
@@ -126,7 +139,6 @@ class DualBlackBox(
                     )
 
                 file.bufferedWriter().use {
-
                     writer ->
 
                     writer.appendLine(
@@ -159,10 +171,7 @@ class DualBlackBox(
                     )
 
                     ring.forEach {
-
-                        writer.appendLine(
-                            it
-                        )
+                        writer.appendLine(it)
                     }
 
                     writer.appendLine(
@@ -172,7 +181,9 @@ class DualBlackBox(
 
                 file
 
-            } catch (_: Exception) {
+            } catch (
+                _: Exception
+            ) {
 
                 null
             }
