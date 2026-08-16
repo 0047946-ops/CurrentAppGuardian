@@ -3,6 +3,7 @@ package com.currentguardian.phase8
 import com.currentguardian.blackbox.DualEvidenceVault
 import com.currentguardian.model.GuardianCapabilities
 import com.currentguardian.model.PerformanceBaseline
+import com.currentguardian.optimization.OptimizationVerification
 
 class Phase8AcceptanceEngine(
     private val evidence:
@@ -32,8 +33,8 @@ class Phase8AcceptanceEngine(
     ) {
 
         val passed =
-            capabilities.level()
-                != "BASIC"
+            capabilities.level() !=
+                "BASIC"
 
         record(
             Phase8TestResult(
@@ -63,13 +64,16 @@ class Phase8AcceptanceEngine(
     ) {
 
         val verification =
-            com.currentguardian
-                .optimization
-                .OptimizationVerification
+            OptimizationVerification
                 .compare(
                     before,
                     after
                 )
+
+        val passed =
+            verification.result !=
+                OptimizationVerification
+                    .Result.DEGRADED
 
         record(
             Phase8TestResult(
@@ -78,18 +82,13 @@ class Phase8AcceptanceEngine(
                         .OPTIMIZATION_VERIFICATION,
 
                 passed =
-                    verification.result !=
-                        com.currentguardian
-                            .optimization
-                            .OptimizationVerification
-                            .Result.DEGRADED,
+                    passed,
 
                 durationMs =
                     0L,
 
                 details =
-                    verification
-                        .details
+                    verification.details
             )
         )
     }
@@ -102,9 +101,11 @@ class Phase8AcceptanceEngine(
             Boolean
     ) {
 
-        val passed =
-            targetEvidenceExists ||
-                guardianEvidenceExists
+        /*
+         * 雙黑盒必須分別成功。
+         * 不能用 guardian || target
+         * 掩蓋其中一個失敗。
+         */
 
         record(
             Phase8TestResult(
@@ -113,14 +114,14 @@ class Phase8AcceptanceEngine(
                         .TARGET_BLACKBOX,
 
                 passed =
-                    passed,
+                    targetEvidenceExists,
 
                 durationMs =
                     0L,
 
                 details =
-                    "target=$targetEvidenceExists;" +
-                    "guardian=$guardianEvidenceExists"
+                    "target=" +
+                    targetEvidenceExists
             )
         )
 
@@ -137,7 +138,7 @@ class Phase8AcceptanceEngine(
                     0L,
 
                 details =
-                    "guardian_evidence=" +
+                    "guardian=" +
                     guardianEvidenceExists
             )
         )
@@ -168,43 +169,58 @@ class Phase8AcceptanceEngine(
     fun overallPassed():
         Boolean {
 
-        if (results.isEmpty()) {
+        if (
+            results.isEmpty()
+        ) {
             return false
         }
 
-        /*
-         * P8 不允許「平均分數掩蓋致命問題」。
-         *
-         * 只要雙黑盒、管家自保或事故報告
-         * 等核心能力失敗，就不能宣告正式通過。
-         */
+        val criticalResults =
+            results.filter { result ->
 
-        val critical =
-            results.filter {
-                it.testCase ==
+                when (
+                    result.testCase
+                ) {
+
                     Phase8TestCase
-                        .TARGET_BLACKBOX ||
-                it.testCase ==
+                        .TARGET_BLACKBOX,
+
                     Phase8TestCase
-                        .GUARDIAN_BLACKBOX ||
-                it.testCase ==
+                        .GUARDIAN_BLACKBOX,
+
                     Phase8TestCase
-                        .APP_UNEXPECTED_EXIT ||
-                it.testCase ==
+                        .APP_UNEXPECTED_EXIT,
+
                     Phase8TestCase
-                        .GUARDIAN_ABNORMAL_EXIT
+                        .GUARDIAN_ABNORMAL_EXIT ->
+
+                        true
+
+                    else ->
+                        false
+                }
             }
 
         val criticalPassed =
-            critical.all {
+            criticalResults.all {
                 it.passed
             }
 
+        /*
+         * 至少 90% 的全部測試案例通過。
+         *
+         * ceil：
+         * 例如 11 個案例至少要 10 個，
+         * 而不是 9 個。
+         */
+        val required =
+            kotlin.math.ceil(
+                results.size * 0.90
+            ).toInt()
+
         val normalPassed =
             passedCount() >=
-                (
-                    results.size * 0.90
-                ).toInt()
+                required
 
         return criticalPassed &&
             normalPassed
