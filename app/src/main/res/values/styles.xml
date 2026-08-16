@@ -1,0 +1,14 @@
+<!-- app/src/main/res/values/styles.xml -->
+
+<resources>
+
+    <style
+        name="Theme.CurrentGuardian"
+        parent="Theme.Material3.DayNight.NoActionBar">
+
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+
+    </style>
+
+</resources>
