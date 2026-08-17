@@ -1,11 +1,20 @@
 package com.currentguardian.model
 
 data class AppBaseline(
-    val packageName: String,
-    val label: String,
-    val createdAt: Long,
-    val sessionStartedAt: Long,
-    val detectionSource: CurrentAppInfo.Source
+    val packageName:
+        String,
+
+    val label:
+        String,
+
+    val createdAt:
+        Long,
+
+    val sessionStartedAt:
+        Long,
+
+    val detectionSource:
+        CurrentAppInfo.Source
 ) {
 
     fun summary():
@@ -34,7 +43,7 @@ data class AppBaseline(
             )
 
             append(
-                "偵測來源："
+                "來源："
             )
 
             append(
@@ -42,16 +51,19 @@ data class AppBaseline(
                     detectionSource
                 ) {
 
-                    CurrentAppInfo.Source
-                        .USAGE_EVENT ->
-                        "使用事件"
+                    CurrentAppInfo.Source.USAGE_EVENT ->
+                        "Usage Event"
 
-                    CurrentAppInfo.Source
-                        .USAGE_STAT ->
-                        "使用統計"
+                    CurrentAppInfo.Source.USAGE_STAT ->
+                        "Usage Statistics"
 
-                    CurrentAppInfo.Source
-                        .UNKNOWN ->
+                    CurrentAppInfo.Source.LAUNCHER ->
+                        "管家啟動"
+
+                    CurrentAppInfo.Source.MANUAL ->
+                        "手動選擇"
+
+                    CurrentAppInfo.Source.UNKNOWN ->
                         "未知"
                 }
             )
