@@ -10,18 +10,26 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.currentguardian.model.AppBaseline
+import com.currentguardian.model.AppTargetInfo
+import com.currentguardian.model.CurrentAppInfo
 import com.currentguardian.session.AppSession
 
 class MainActivity : Activity() {
 
-    private lateinit var detector:
-        CurrentAppDetector
+    private lateinit var engine:
+        CurrentAppEngine
 
     private var currentSession:
-        AppSession? = null
+        AppSession? =
+        null
 
     private var currentBaseline:
-        AppBaseline? = null
+        AppBaseline? =
+        null
+
+    private var currentTarget:
+        AppTargetInfo? =
+        null
 
     private lateinit var statusText:
         TextView
@@ -36,14 +44,16 @@ class MainActivity : Activity() {
         TextView
 
     override fun onCreate(
-        savedInstanceState: Bundle?
+        savedInstanceState:
+            Bundle?
     ) {
+
         super.onCreate(
             savedInstanceState
         )
 
-        detector =
-            CurrentAppDetector(
+        engine =
+            CurrentAppEngine(
                 this
             )
 
@@ -51,9 +61,10 @@ class MainActivity : Activity() {
     }
 
     override fun onResume() {
+
         super.onResume()
 
-        updatePermissionStatus()
+        refreshStatus()
     }
 
     private fun buildUi() {
@@ -98,27 +109,13 @@ class MainActivity : Activity() {
             }
 
         statusText =
-            TextView(
-                this
-            ).apply {
-
-                textSize =
-                    17f
-
-                gravity =
-                    Gravity.CENTER
-
-                setPadding(
-                    0,
-                    20,
-                    0,
-                    12
-                )
-            }
+            createInfoText(
+                "P2：初始化中"
+            )
 
         currentAppText =
             createInfoText(
-                "目前 App：尚未偵測"
+                "目前 App：尚未建立"
             )
 
         sessionText =
@@ -131,29 +128,64 @@ class MainActivity : Activity() {
                 "Baseline：尚未建立"
             )
 
-        val usageButton =
+        val permissionButton =
             Button(
                 this
             ).apply {
 
                 text =
-                    "開啟 Current App Guardian 使用狀態存取"
+                    "開啟 Usage Access 設定"
 
                 setOnClickListener {
-                    openUsageAccessSettings()
+
+                    startActivity(
+                        Intent(
+                            Settings
+                                .ACTION_USAGE_ACCESS_SETTINGS
+                        )
+                    )
                 }
             }
 
-        val detectButton =
+        val autoButton =
             Button(
                 this
             ).apply {
 
                 text =
-                    "偵測目前 App"
+                    "自動辨識目前 App"
 
                 setOnClickListener {
-                    detectCurrentApp()
+
+                    detectAutomatically()
+                }
+            }
+
+        val launcherButton =
+            Button(
+                this
+            ).apply {
+
+                text =
+                    "選擇要啟動的 App"
+
+                setOnClickListener {
+
+                    showTargetList()
+                }
+            }
+
+        val launchButton =
+            Button(
+                this
+            ).apply {
+
+                text =
+                    "啟動目前選定 App"
+
+                setOnClickListener {
+
+                    launchSelected()
                 }
             }
 
@@ -166,7 +198,8 @@ class MainActivity : Activity() {
                     "結束目前 Session"
 
                 setOnClickListener {
-                    endCurrentSession()
+
+                    endSession()
                 }
             }
 
@@ -179,11 +212,19 @@ class MainActivity : Activity() {
         )
 
         root.addView(
-            usageButton
+            permissionButton
         )
 
         root.addView(
-            detectButton
+            autoButton
+        )
+
+        root.addView(
+            launcherButton
+        )
+
+        root.addView(
+            launchButton
         )
 
         root.addView(
@@ -210,12 +251,14 @@ class MainActivity : Activity() {
             scroll
         )
 
-        updatePermissionStatus()
+        refreshStatus()
     }
 
     private fun createInfoText(
-        initial: String
-    ): TextView {
+        initial:
+            String
+    ):
+        TextView {
 
         return TextView(
             this
@@ -236,110 +279,186 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openUsageAccessSettings() {
+    private fun refreshStatus() {
 
-        try {
-
-            if (
-                android.os.Build.VERSION.SDK_INT >= 29
-            ) {
-
-                val intent =
-                    Intent(
-                        Settings.ACTION_APP_USAGE_SETTINGS
-                    ).apply {
-
-                        putExtra(
-                            Intent.EXTRA_PACKAGE_NAME,
-                            packageName
-                        )
-                    }
-
-                startActivity(
-                    intent
-                )
-
-            } else {
-
-                val intent =
-                    Intent(
-                        Settings.ACTION_USAGE_ACCESS_SETTINGS
-                    )
-
-                startActivity(
-                    intent
-                )
-            }
-
-        } catch (_: Exception) {
-
-            try {
-
-                val fallback =
-                    Intent(
-                        Settings.ACTION_USAGE_ACCESS_SETTINGS
-                    )
-
-                startActivity(
-                    fallback
-                )
-
-            } catch (_: Exception) {
-
-                statusText.text =
-                    "無法開啟使用狀態存取設定。"
-            }
-        }
-    }
-
-    private fun updatePermissionStatus() {
+        val mode =
+            engine.recommendedMode()
 
         statusText.text =
-            if (
-                detector.hasUsageAccess()
+            when (
+                mode
             ) {
 
-                "使用狀態存取：已授權"
+                CurrentAppEngine.Mode
+                    .AUTO_USAGE ->
 
-            } else {
+                    "P2：自動辨識模式可用"
 
-                "使用狀態存取：尚未授權"
+                CurrentAppEngine.Mode
+                    .LAUNCHER ->
+
+                    "P2：啟動器模式"
+
+                CurrentAppEngine.Mode
+                    .MANUAL ->
+
+                    "P2：手動目標模式"
             }
     }
 
-    private fun detectCurrentApp() {
+    private fun detectAutomatically() {
 
         if (
-            !detector.hasUsageAccess()
+            !engine.usageAccessAvailable()
         ) {
 
             statusText.text =
-                "請先授權 Current App Guardian 的使用狀態存取。"
+                "Usage Access 不可用，改用「選擇要啟動的 App」。"
 
             return
         }
 
         val app =
-            detector.detect()
+            engine.detectAutomatically()
 
         if (
             app == null
         ) {
-
-            currentAppText.text =
-                "目前 App：無法取得"
-
-            sessionText.text =
-                "Session：未建立"
-
-            baselineText.text =
-                "Baseline：未建立"
 
             statusText.text =
                 "目前沒有取得可確認的前景 App。"
 
             return
         }
+
+        startSession(
+            app
+        )
+    }
+
+    private fun showTargetList() {
+
+        val apps =
+            engine.availableTargets()
+
+        if (
+            apps.isEmpty()
+        ) {
+
+            statusText.text =
+                "目前沒有找到可啟動的第三方 App。"
+
+            return
+        }
+
+        val labels =
+            apps.map {
+                it.label
+            }.toTypedArray()
+
+        android.app.AlertDialog.Builder(
+            this
+        )
+            .setTitle(
+                "選擇目標 App"
+            )
+            .setItems(
+                labels
+            ) { _, which ->
+
+                val target =
+                    apps[which]
+
+                if (
+                    engine.selectTarget(
+                        target
+                    )
+                ) {
+
+                    currentTarget =
+                        target
+
+                    statusText.text =
+                        "已選擇：" +
+                            target.label
+
+                    currentAppText.text =
+                        buildString {
+
+                            appendLine(
+                                "已選定目標："
+                            )
+
+                            appendLine(
+                                target.label
+                            )
+
+                            append(
+                                target.packageName
+                            )
+                        }
+                }
+            }
+            .show()
+    }
+
+    private fun launchSelected() {
+
+        val target =
+            currentTarget
+
+        if (
+            target == null
+        ) {
+
+            statusText.text =
+                "請先選擇目標 App。"
+
+            return
+        }
+
+        val result =
+            engine.launchSelected()
+
+        if (
+            !result.success
+        ) {
+
+            statusText.text =
+                result.reason
+
+            return
+        }
+
+        val app =
+            CurrentAppInfo(
+                packageName =
+                    target.packageName,
+
+                label =
+                    target.label,
+
+                detectedAt =
+                    System.currentTimeMillis(),
+
+                source =
+                    CurrentAppInfo.Source
+                        .LAUNCHER
+            )
+
+        startSession(
+            app
+        )
+
+        statusText.text =
+            "已啟動：" +
+                target.label
+    }
+
+    private fun startSession(
+        app:
+            CurrentAppInfo
+    ) {
 
         currentSession =
             AppSession(
@@ -359,27 +478,15 @@ class MainActivity : Activity() {
                     System.currentTimeMillis(),
 
                 sessionStartedAt =
-                    currentSession!!.startedAt,
+                    currentSession!!
+                        .startedAt,
 
                 detectionSource =
                     app.source
             )
 
         currentAppText.text =
-            buildString {
-
-                appendLine(
-                    "目前 App："
-                )
-
-                appendLine(
-                    app.label
-                )
-
-                append(
-                    app.packageName
-                )
-            }
+            app.displayText()
 
         sessionText.text =
             buildString {
@@ -398,12 +505,9 @@ class MainActivity : Activity() {
         baselineText.text =
             currentBaseline!!
                 .summary()
-
-        statusText.text =
-            "P2：Current App 已辨識"
     }
 
-    private fun endCurrentSession() {
+    private fun endSession() {
 
         val session =
             currentSession
@@ -434,6 +538,12 @@ class MainActivity : Activity() {
             }
 
         statusText.text =
-            "P2：Session 已結束"
+            "Session 已結束"
+
+        currentSession =
+            null
+
+        currentBaseline =
+            null
     }
 }
