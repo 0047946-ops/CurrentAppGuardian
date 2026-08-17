@@ -1,5 +1,6 @@
 package com.currentguardian
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -8,23 +9,19 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.activity.ComponentActivity
 import com.currentguardian.model.AppBaseline
 import com.currentguardian.session.AppSession
 
-class MainActivity :
-    ComponentActivity() {
+class MainActivity : Activity() {
 
     private lateinit var detector:
         CurrentAppDetector
 
     private var currentSession:
-        AppSession? =
-        null
+        AppSession? = null
 
     private var currentBaseline:
-        AppBaseline? =
-        null
+        AppBaseline? = null
 
     private lateinit var statusText:
         TextView
@@ -41,7 +38,6 @@ class MainActivity :
     override fun onCreate(
         savedInstanceState: Bundle?
     ) {
-
         super.onCreate(
             savedInstanceState
         )
@@ -55,7 +51,6 @@ class MainActivity :
     }
 
     override fun onResume() {
-
         super.onResume()
 
         updatePermissionStatus()
@@ -227,10 +222,8 @@ class MainActivity :
     }
 
     private fun createInfoText(
-        initial:
-            String
-    ):
-        TextView {
+        initial: String
+    ): TextView {
 
         return TextView(
             this
