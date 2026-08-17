@@ -137,16 +137,10 @@ class MainActivity : Activity() {
             ).apply {
 
                 text =
-                    "開啟使用狀態存取"
+                    "開啟 Current App Guardian 使用狀態存取"
 
                 setOnClickListener {
-
-                    startActivity(
-                        Intent(
-                            Settings
-                                .ACTION_USAGE_ACCESS_SETTINGS
-                        )
-                    )
+                    openUsageAccessSettings()
                 }
             }
 
@@ -159,7 +153,6 @@ class MainActivity : Activity() {
                     "偵測目前 App"
 
                 setOnClickListener {
-
                     detectCurrentApp()
                 }
             }
@@ -173,7 +166,6 @@ class MainActivity : Activity() {
                     "結束目前 Session"
 
                 setOnClickListener {
-
                     endCurrentSession()
                 }
             }
@@ -244,6 +236,62 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun openUsageAccessSettings() {
+
+        try {
+
+            if (
+                android.os.Build.VERSION.SDK_INT >= 29
+            ) {
+
+                val intent =
+                    Intent(
+                        Settings.ACTION_APP_USAGE_SETTINGS
+                    ).apply {
+
+                        putExtra(
+                            Intent.EXTRA_PACKAGE_NAME,
+                            packageName
+                        )
+                    }
+
+                startActivity(
+                    intent
+                )
+
+            } else {
+
+                val intent =
+                    Intent(
+                        Settings.ACTION_USAGE_ACCESS_SETTINGS
+                    )
+
+                startActivity(
+                    intent
+                )
+            }
+
+        } catch (_: Exception) {
+
+            try {
+
+                val fallback =
+                    Intent(
+                        Settings.ACTION_USAGE_ACCESS_SETTINGS
+                    )
+
+                startActivity(
+                    fallback
+                )
+
+            } catch (_: Exception) {
+
+                statusText.text =
+                    "無法開啟使用狀態存取設定。"
+            }
+        }
+    }
+
     private fun updatePermissionStatus() {
 
         statusText.text =
@@ -266,7 +314,7 @@ class MainActivity : Activity() {
         ) {
 
             statusText.text =
-                "請先開啟使用狀態存取。"
+                "請先授權 Current App Guardian 的使用狀態存取。"
 
             return
         }
