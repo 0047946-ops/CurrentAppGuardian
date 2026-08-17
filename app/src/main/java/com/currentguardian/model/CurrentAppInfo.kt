@@ -1,10 +1,17 @@
 package com.currentguardian.model
 
 data class CurrentAppInfo(
-    val packageName: String,
-    val label: String,
-    val detectedAt: Long,
-    val source: Source
+    val packageName:
+        String,
+
+    val label:
+        String,
+
+    val detectedAt:
+        Long,
+
+    val source:
+        Source
 ) {
 
     enum class Source {
@@ -13,35 +20,52 @@ data class CurrentAppInfo(
 
         USAGE_STAT,
 
+        LAUNCHER,
+
+        MANUAL,
+
         UNKNOWN
     }
 
-    fun isKnown(): Boolean {
+    fun isKnown():
+        Boolean {
+
         return packageName.isNotBlank()
     }
 
-    fun displayText(): String {
+    fun displayText():
+        String {
 
         return buildString {
 
-            append(label)
+            appendLine(
+                label
+            )
 
-            append("\n")
-
-            append(packageName)
-
-            append("\n")
-
-            append("來源：")
+            appendLine(
+                packageName
+            )
 
             append(
-                when (source) {
+                "來源："
+            )
+
+            append(
+                when (
+                    source
+                ) {
 
                     Source.USAGE_EVENT ->
-                        "使用事件"
+                        "Usage Event"
 
                     Source.USAGE_STAT ->
-                        "使用統計"
+                        "Usage Statistics"
+
+                    Source.LAUNCHER ->
+                        "管家啟動"
+
+                    Source.MANUAL ->
+                        "手動選擇"
 
                     Source.UNKNOWN ->
                         "未知"
