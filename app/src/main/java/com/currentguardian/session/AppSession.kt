@@ -3,8 +3,11 @@ package com.currentguardian.session
 import com.currentguardian.model.CurrentAppInfo
 
 class AppSession(
-    val app: CurrentAppInfo,
-    val startedAt: Long =
+    val app:
+        CurrentAppInfo,
+
+    val startedAt:
+        Long =
         System.currentTimeMillis()
 ) {
 
@@ -15,7 +18,8 @@ class AppSession(
         "SESSION_STARTED"
 
     fun markEvent(
-        event: String
+        event:
+            String
     ) {
 
         if (
@@ -28,7 +32,9 @@ class AppSession(
             event
     }
 
-    fun isActive(): Boolean {
+    fun isActive():
+        Boolean {
+
         return active
     }
 
