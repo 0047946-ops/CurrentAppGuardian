@@ -1,7 +1,6 @@
 package com.currentguardian.launcher
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.currentguardian.model.AppTargetInfo
@@ -18,56 +17,49 @@ class AppCatalog(
     fun getEligibleApps():
         List<AppTargetInfo> {
 
-        val intent =
-            Intent(
-                Intent.ACTION_MAIN
-            ).apply {
+        val applications =
+            try {
 
-                addCategory(
-                    Intent.CATEGORY_LAUNCHER
-                )
+                packageManager
+                    .getInstalledApplications(
+                        PackageManager.GET_META_DATA
+                    )
+
+            } catch (_: Throwable) {
+
+                emptyList()
             }
-
-        val activities =
-            packageManager
-                .queryIntentActivities(
-                    intent,
-                    PackageManager
-                        .MATCH_DEFAULT_ONLY
-                )
 
         val result =
             mutableMapOf<String, AppTargetInfo>()
 
         for (
-            resolveInfo in activities
+            applicationInfo in applications
         ) {
 
-            val activityInfo =
-                resolveInfo.activityInfo
-                    ?: continue
-
-            val applicationInfo =
-                activityInfo.applicationInfo
-                    ?: continue
-
-            val packageName =
-                applicationInfo.packageName
-
             if (
-                packageName ==
-                context.packageName
+                applicationInfo == null
             ) {
                 continue
             }
 
-            val protectedSystemApp =
-                isProtectedSystemApp(
-                    applicationInfo
-                )
+            val packageName =
+                applicationInfo.packageName
+                    ?.trim()
+                    ?: continue
 
             if (
-                protectedSystemApp
+                packageName.isBlank()
+            ) {
+                continue
+            }
+
+            /*
+             * 不把 CurrentAppGuardian 自己列入可選目標。
+             */
+            if (
+                packageName ==
+                context.packageName
             ) {
                 continue
             }
@@ -79,12 +71,44 @@ class AppCatalog(
                         .getApplicationLabel(
                             applicationInfo
                         )
-                        .toString()
+                        ?.toString()
+                        ?.trim()
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?: packageName
 
-                } catch (_: Exception) {
+                } catch (_: Throwable) {
 
                     packageName
                 }
+
+            /*
+             * 有 Launch Intent = 一般使用者可直接啟動的 App。
+             *
+             * 沒有 Launch Intent 的程式仍然保留在清單，
+             * 但 launchable=false。
+             */
+            val launchIntent =
+                try {
+
+                    packageManager
+                        .getLaunchIntentForPackage(
+                            packageName
+                        )
+
+                } catch (_: Throwable) {
+
+                    null
+                }
+
+            val launchable =
+                launchIntent != null
+
+            val protectedSystemApp =
+                isProtectedSystemApp(
+                    applicationInfo
+                )
 
             result[
                 packageName
@@ -97,19 +121,26 @@ class AppCatalog(
                         label,
 
                     launchable =
-                        true,
+                        launchable,
 
                     protectedSystemApp =
-                        false
+                        protectedSystemApp
                 )
         }
 
+        /*
+         * 可啟動的一般 App 優先。
+         * 不可啟動的項目仍然保留，讓使用者知道它存在。
+         */
         return result
             .values
-            .sortedBy {
-                it.label
-                    .lowercase()
-            }
+            .sortedWith(
+                compareBy<AppTargetInfo> {
+                    if (it.launchable) 0 else 1
+                }.thenBy {
+                    it.label.lowercase()
+                }
+            )
     }
 
     private fun isProtectedSystemApp(
