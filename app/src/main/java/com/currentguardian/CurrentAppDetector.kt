@@ -14,7 +14,7 @@ class CurrentAppDetector(
     private val usageStatsManager =
         context.getSystemService(
             Context.USAGE_STATS_SERVICE
-        ) as UsageStatsManager
+        ) as? UsageStatsManager
 
     fun hasUsageAccess(): Boolean {
 
@@ -23,7 +23,8 @@ class CurrentAppDetector(
             val appOps =
                 context.getSystemService(
                     Context.APP_OPS_SERVICE
-                ) as AppOpsManager
+                ) as? AppOpsManager
+                    ?: return false
 
             val mode =
                 appOps.unsafeCheckOpNoThrow(
@@ -35,7 +36,7 @@ class CurrentAppDetector(
             mode ==
                 AppOpsManager.MODE_ALLOWED
 
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
 
             false
         }
@@ -49,87 +50,126 @@ class CurrentAppDetector(
             return null
         }
 
-        val now =
-            System.currentTimeMillis()
+        val manager =
+            usageStatsManager
+                ?: return null
 
-        val begin =
-            now -
+        return try {
+
+            val now =
+                System.currentTimeMillis()
+
+            val safeLookback =
                 lookbackMs
+                    .coerceIn(
+                        1_000L,
+                        120_000L
+                    )
 
-        val events =
-            usageStatsManager.queryEvents(
-                begin,
-                now
-            )
+            val begin =
+                now -
+                    safeLookback
 
-        val event =
-            UsageEvents.Event()
-
-        var latestPackage:
-            String? = null
-
-        var latestTime =
-            0L
-
-        while (
-            events.hasNextEvent()
-        ) {
-
-            events.getNextEvent(
-                event
-            )
-
-            val isForegroundEvent =
-                isForegroundEvent(
-                    event.eventType
-                )
-
-            if (!isForegroundEvent) {
-                continue
-            }
-
-            val packageName =
-                event.packageName
-                    ?: continue
-
-            if (
-                packageName ==
-                context.packageName
-            ) {
-                continue
-            }
-
-            if (
-                event.timeStamp >=
-                latestTime
-            ) {
-
-                latestTime =
-                    event.timeStamp
-
-                latestPackage =
-                    packageName
-            }
-        }
-
-        val packageName =
-            latestPackage
-                ?: return fallbackFromStats(
+            val events =
+                manager.queryEvents(
                     begin,
                     now
                 )
 
-        return createInfo(
-            packageName =
-                packageName,
+            val event =
+                UsageEvents.Event()
 
-            detectedAt =
-                latestTime,
+            var latestPackage:
+                String? = null
 
-            source =
-                CurrentAppInfo.Source
-                    .USAGE_EVENT
-        )
+            var latestTime =
+                0L
+
+            while (
+                events.hasNextEvent()
+            ) {
+
+                if (
+                    !events.getNextEvent(
+                        event
+                    )
+                ) {
+                    break
+                }
+
+                if (
+                    !isForegroundEvent(
+                        event.eventType
+                    )
+                ) {
+                    continue
+                }
+
+                val packageName =
+                    event.packageName
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?: continue
+
+                if (
+                    packageName ==
+                    context.packageName
+                ) {
+                    continue
+                }
+
+                if (
+                    event.timeStamp >=
+                    latestTime
+                ) {
+
+                    latestTime =
+                        event.timeStamp
+
+                    latestPackage =
+                        packageName
+                }
+            }
+
+            val packageName =
+                latestPackage
+
+            if (
+                packageName != null &&
+                latestTime > 0L
+            ) {
+
+                return createInfo(
+                    packageName =
+                        packageName,
+
+                    detectedAt =
+                        latestTime,
+
+                    source =
+                        CurrentAppInfo.Source
+                            .USAGE_EVENT
+                )
+            }
+
+            fallbackFromStats(
+                begin,
+                now
+            )
+
+        } catch (_: SecurityException) {
+
+            null
+
+        } catch (_: IllegalArgumentException) {
+
+            null
+
+        } catch (_: Throwable) {
+
+            null
+        }
     }
 
     private fun fallbackFromStats(
@@ -137,42 +177,63 @@ class CurrentAppDetector(
         end: Long
     ): CurrentAppInfo? {
 
-        val stats =
+        val manager =
             usageStatsManager
-                .queryAndAggregateUsageStats(
+                ?: return null
+
+        return try {
+
+            val stats =
+                manager.queryAndAggregateUsageStats(
                     begin,
                     end
                 )
 
-        val candidate =
-            stats.values
-                .asSequence()
-                .filter {
-                    it.packageName !=
-                        context.packageName
-                }
-                .maxByOrNull {
-                    it.lastTimeUsed
-                }
-                ?: return null
+            val candidate =
+                stats.values
+                    .asSequence()
+                    .filter {
+                        it.packageName !=
+                            context.packageName
+                    }
+                    .filter {
+                        it.packageName.isNotBlank()
+                    }
+                    .maxByOrNull {
+                        it.lastTimeUsed
+                    }
+                    ?: return null
 
-        if (
-            candidate.packageName.isBlank()
-        ) {
-            return null
+            if (
+                candidate.lastTimeUsed <= 0L
+            ) {
+                return null
+            }
+
+            createInfo(
+                packageName =
+                    candidate.packageName,
+
+                detectedAt =
+                    candidate.lastTimeUsed,
+
+                source =
+                    CurrentAppInfo.Source
+                        .USAGE_STAT
+            )
+
+        } catch (_: SecurityException) {
+
+            null
+
+        } catch (_: IllegalArgumentException) {
+
+            null
+
+        } catch (_: Throwable) {
+
+            null
         }
-
-        return createInfo(
-            packageName =
-                candidate.packageName,
-
-            detectedAt =
-                candidate.lastTimeUsed,
-
-            source =
-                CurrentAppInfo.Source
-                    .USAGE_STAT
-        )
     }
 
     private fun isForegroundEvent(
@@ -202,38 +263,65 @@ class CurrentAppDetector(
         source: CurrentAppInfo.Source
     ): CurrentAppInfo {
 
+        val safePackageName =
+            packageName
+                .trim()
+
         val label =
-            try {
+            if (
+                safePackageName.isBlank()
+            ) {
 
-                val applicationInfo =
+                "未知 App"
+
+            } else {
+
+                try {
+
+                    // Android 11 相容寫法。
+                    // 不使用 API 33+ 的 ApplicationInfoFlags。
+                    val applicationInfo =
+                        context.packageManager
+                            .getApplicationInfo(
+                                safePackageName,
+                                0
+                            )
+
                     context.packageManager
-                        .getApplicationInfo(
-                            packageName,
-                            PackageManager
-                                .ApplicationInfoFlags
-                                .of(0)
+                        .getApplicationLabel(
+                            applicationInfo
                         )
+                        ?.toString()
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?: safePackageName
 
-                context.packageManager
-                    .getApplicationLabel(
-                        applicationInfo
-                    )
-                    .toString()
+                } catch (_: PackageManager.NameNotFoundException) {
 
-            } catch (_: Exception) {
+                    safePackageName
 
-                packageName
+                } catch (_: Throwable) {
+
+                    safePackageName
+                }
             }
 
         return CurrentAppInfo(
             packageName =
-                packageName,
+                safePackageName,
 
             label =
                 label,
 
             detectedAt =
-                detectedAt,
+                if (
+                    detectedAt > 0L
+                ) {
+                    detectedAt
+                } else {
+                    System.currentTimeMillis()
+                },
 
             source =
                 source
