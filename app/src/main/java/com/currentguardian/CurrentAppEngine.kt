@@ -4,12 +4,12 @@ import android.content.Context
 import android.os.SystemClock
 import com.currentguardian.launcher.AppCatalog
 import com.currentguardian.launcher.AppLauncher
+import com.currentguardian.launcher.LaunchResult
 import com.currentguardian.model.AppTargetInfo
 import com.currentguardian.model.CurrentAppInfo
 
 class CurrentAppEngine(
-    private val context:
-        Context
+    private val context: Context
 ) {
 
     enum class Mode {
@@ -37,12 +37,10 @@ class CurrentAppEngine(
         )
 
     private var selectedTarget:
-        AppTargetInfo? =
-        null
+        AppTargetInfo? = null
 
     private var lastLaunchRequest:
-        Long =
-        0L
+        Long = 0L
 
     fun usageAccessAvailable():
         Boolean {
@@ -57,7 +55,6 @@ class CurrentAppEngine(
         if (
             !usageAccessAvailable()
         ) {
-
             return null
         }
 
@@ -73,17 +70,14 @@ class CurrentAppEngine(
     }
 
     fun selectTarget(
-        target:
-            AppTargetInfo
-    ):
-        Boolean {
+        target: AppTargetInfo
+    ): Boolean {
 
         if (
             !target.isEligibleTarget(
                 context.packageName
             )
         ) {
-
             return false
         }
 
@@ -105,9 +99,7 @@ class CurrentAppEngine(
         val target =
             selectedTarget
                 ?: return LaunchResult(
-                    success =
-                        false,
-
+                    success = false,
                     reason =
                         "尚未選擇目標 App。"
                 )
@@ -120,7 +112,6 @@ class CurrentAppEngine(
         if (
             result.success
         ) {
-
             lastLaunchRequest =
                 SystemClock.elapsedRealtime()
         }
