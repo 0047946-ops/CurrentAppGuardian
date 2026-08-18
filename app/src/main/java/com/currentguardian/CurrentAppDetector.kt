@@ -4,7 +4,9 @@ import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.Settings
 import com.currentguardian.model.CurrentAppInfo
 
 class CurrentAppDetector(
@@ -60,15 +62,16 @@ class CurrentAppDetector(
                 System.currentTimeMillis()
 
             val safeLookback =
-                lookbackMs
-                    .coerceIn(
-                        1_000L,
-                        120_000L
-                    )
+                lookbackMs.coerceIn(
+                    1_000L,
+                    120_000L
+                )
 
             val begin =
-                now -
-                    safeLookback
+                now - safeLookback
+
+            val excludedPackages =
+                getExcludedPackages()
 
             val events =
                 manager.queryEvents(
@@ -79,6 +82,20 @@ class CurrentAppDetector(
             val event =
                 UsageEvents.Event()
 
+            /*
+             * 不只記錄最後一個事件。
+             *
+             * 因為使用者從 Whoscall 回到 CurrentAppGuardian 時，
+             * 最近事件可能是：
+             *
+             * Whoscall → Launcher → CurrentAppGuardian
+             *
+             * CurrentAppGuardian 本身已排除，
+             * 但 Launcher 如果不排除，就會被誤判成目前 App。
+             *
+             * 因此所有「非目標環境」事件都先排除，
+             * 再找最近真正可辨識的 App。
+             */
             var latestPackage:
                 String? = null
 
@@ -107,14 +124,17 @@ class CurrentAppDetector(
 
                 val packageName =
                     event.packageName
+                        ?.trim()
                         ?.takeIf {
                             it.isNotBlank()
                         }
                         ?: continue
 
                 if (
-                    packageName ==
-                    context.packageName
+                    shouldExcludePackage(
+                        packageName,
+                        excludedPackages
+                    )
                 ) {
                     continue
                 }
@@ -153,9 +173,14 @@ class CurrentAppDetector(
                 )
             }
 
+            /*
+             * UsageEvents 沒有合適候選時，
+             * 再使用 UsageStats 做第二層 fallback。
+             */
             fallbackFromStats(
                 begin,
-                now
+                now,
+                excludedPackages
             )
 
         } catch (_: SecurityException) {
@@ -174,7 +199,9 @@ class CurrentAppDetector(
 
     private fun fallbackFromStats(
         begin: Long,
-        end: Long
+        end: Long,
+        excludedPackages:
+            Set<String>
     ): CurrentAppInfo? {
 
         val manager =
@@ -193,22 +220,21 @@ class CurrentAppDetector(
                 stats.values
                     .asSequence()
                     .filter {
-                        it.packageName !=
-                            context.packageName
+                        it.packageName.isNotBlank()
                     }
                     .filter {
-                        it.packageName.isNotBlank()
+                        !shouldExcludePackage(
+                            it.packageName,
+                            excludedPackages
+                        )
+                    }
+                    .filter {
+                        it.lastTimeUsed > 0L
                     }
                     .maxByOrNull {
                         it.lastTimeUsed
                     }
                     ?: return null
-
-            if (
-                candidate.lastTimeUsed <= 0L
-            ) {
-                return null
-            }
 
             createInfo(
                 packageName =
@@ -257,10 +283,131 @@ class CurrentAppDetector(
         }
     }
 
+    /**
+     * 建立「不應該被當成目前目標 App」的 package 集合。
+     *
+     * 只排除：
+     * 1. CG 自己
+     * 2. 系統 Home / Launcher
+     * 3. Android 設定
+     *
+     * 不會把所有系統 App 一次排除，
+     * 以免違反「全應用」產品方向。
+     */
+    private fun getExcludedPackages():
+        Set<String> {
+
+        val excluded =
+            linkedSetOf<String>()
+
+        // 1. CurrentAppGuardian 自己
+        excluded.add(
+            context.packageName
+        )
+
+        // 2. 系統 Home / Launcher
+        try {
+
+            val homeIntent =
+                Intent(
+                    Intent.ACTION_MAIN
+                ).apply {
+
+                    addCategory(
+                        Intent.CATEGORY_HOME
+                    )
+
+                    addCategory(
+                        Intent.CATEGORY_DEFAULT
+                    )
+                }
+
+            val homeActivities =
+                context.packageManager
+                    .queryIntentActivities(
+                        homeIntent,
+                        PackageManager.MATCH_DEFAULT_ONLY
+                    )
+
+            homeActivities.forEach {
+                val packageName =
+                    it.activityInfo
+                        ?.packageName
+
+                if (
+                    !packageName.isNullOrBlank()
+                ) {
+                    excluded.add(
+                        packageName
+                    )
+                }
+            }
+
+        } catch (_: Throwable) {
+            // 無法取得 Launcher 時不影響主流程
+        }
+
+        // 3. Android 設定 App
+        try {
+
+            val settingsIntent =
+                Intent(
+                    Settings.ACTION_SETTINGS
+                )
+
+            val settingsInfo =
+                context.packageManager
+                    .resolveActivity(
+                        settingsIntent,
+                        PackageManager.MATCH_DEFAULT_ONLY
+                    )
+
+            val settingsPackage =
+                settingsInfo
+                    ?.activityInfo
+                    ?.packageName
+
+            if (
+                !settingsPackage.isNullOrBlank()
+            ) {
+                excluded.add(
+                    settingsPackage
+                )
+            }
+
+        } catch (_: Throwable) {
+            // 無法取得設定 App 時不影響主流程
+        }
+
+        return excluded
+    }
+
+    private fun shouldExcludePackage(
+        packageName: String,
+        excludedPackages:
+            Set<String>
+    ): Boolean {
+
+        val normalized =
+            packageName.trim()
+
+        if (
+            normalized.isBlank()
+        ) {
+            return true
+        }
+
+        return excludedPackages
+            .contains(
+                normalized
+            )
+    }
+
     private fun createInfo(
         packageName: String,
         detectedAt: Long,
-        source: CurrentAppInfo.Source
+        source:
+            CurrentAppInfo.Source
     ): CurrentAppInfo {
 
         val safePackageName =
@@ -278,8 +425,9 @@ class CurrentAppDetector(
 
                 try {
 
-                    // Android 11 相容寫法。
-                    // 不使用 API 33+ 的 ApplicationInfoFlags。
+                    /*
+                     * Android 11 相容寫法。
+                     */
                     val applicationInfo =
                         context.packageManager
                             .getApplicationInfo(
@@ -297,7 +445,11 @@ class CurrentAppDetector(
                         }
                         ?: safePackageName
 
-                } catch (_: PackageManager.NameNotFoundException) {
+                } catch (
+                    _:
+                        PackageManager
+                            .NameNotFoundException
+                ) {
 
                     safePackageName
 
