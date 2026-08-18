@@ -20,16 +20,13 @@ class MainActivity : Activity() {
         CurrentAppEngine
 
     private var currentSession:
-        AppSession? =
-        null
+        AppSession? = null
 
     private var currentBaseline:
-        AppBaseline? =
-        null
+        AppBaseline? = null
 
     private var currentTarget:
-        AppTargetInfo? =
-        null
+        AppTargetInfo? = null
 
     private lateinit var statusText:
         TextView
@@ -44,8 +41,7 @@ class MainActivity : Activity() {
         TextView
 
     override fun onCreate(
-        savedInstanceState:
-            Bundle?
+        savedInstanceState: Bundle?
     ) {
 
         super.onCreate(
@@ -255,10 +251,8 @@ class MainActivity : Activity() {
     }
 
     private fun createInfoText(
-        initial:
-            String
-    ):
-        TextView {
+        initial: String
+    ): TextView {
 
         return TextView(
             this
