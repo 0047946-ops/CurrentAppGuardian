@@ -41,7 +41,8 @@ class MainActivity : Activity() {
         TextView
 
     override fun onCreate(
-        savedInstanceState: Bundle?
+        savedInstanceState:
+            Bundle?
     ) {
 
         super.onCreate(
@@ -143,13 +144,17 @@ class MainActivity : Activity() {
                 }
             }
 
+        /*
+         * 工程測試入口：
+         * 真正查詢 Android 回報的前景 App。
+         */
         val autoButton =
             Button(
                 this
             ).apply {
 
                 text =
-                    "自動辨識目前 App"
+                    "工程測試：自動辨識目前前景 App"
 
                 setOnClickListener {
 
@@ -157,13 +162,17 @@ class MainActivity : Activity() {
                 }
             }
 
+        /*
+         * 工程測試入口：
+         * 讓使用者選擇目標 App。
+         */
         val launcherButton =
             Button(
                 this
             ).apply {
 
                 text =
-                    "選擇要啟動的 App"
+                    "工程測試：選擇要啟動的 App"
 
                 setOnClickListener {
 
@@ -171,17 +180,40 @@ class MainActivity : Activity() {
                 }
             }
 
+        /*
+         * 工程測試入口：
+         * 啟動目前選定的 App。
+         */
         val launchButton =
             Button(
                 this
             ).apply {
 
                 text =
-                    "啟動目前選定 App"
+                    "工程測試：啟動目前選定 App"
 
                 setOnClickListener {
 
                     launchSelected()
+                }
+            }
+
+        /*
+         * 工程測試入口：
+         * 驗證使用者選定的 App
+         * 是否已經真的成為 Android 前景。
+         */
+        val verifyButton =
+            Button(
+                this
+            ).apply {
+
+                text =
+                    "工程測試：辨識目前選定 App"
+
+                setOnClickListener {
+
+                    detectSelectedTarget()
                 }
             }
 
@@ -191,7 +223,7 @@ class MainActivity : Activity() {
             ).apply {
 
                 text =
-                    "結束目前 Session"
+                    "工程測試：結束目前 Session"
 
                 setOnClickListener {
 
@@ -224,6 +256,10 @@ class MainActivity : Activity() {
         )
 
         root.addView(
+            verifyButton
+        )
+
+        root.addView(
             endButton
         )
 
@@ -251,7 +287,8 @@ class MainActivity : Activity() {
     }
 
     private fun createInfoText(
-        initial: String
+        initial:
+            String
     ): TextView {
 
         return TextView(
@@ -286,7 +323,7 @@ class MainActivity : Activity() {
                 CurrentAppEngine.Mode
                     .AUTO_USAGE ->
 
-                    "P2：自動辨識模式可用"
+                    "P2：Usage Access 可用／自動辨識可用"
 
                 CurrentAppEngine.Mode
                     .LAUNCHER ->
@@ -300,6 +337,9 @@ class MainActivity : Activity() {
             }
     }
 
+    /**
+     * 真正的「目前前景 App」測試。
+     */
     private fun detectAutomatically() {
 
         if (
@@ -307,7 +347,7 @@ class MainActivity : Activity() {
         ) {
 
             statusText.text =
-                "Usage Access 不可用，改用「選擇要啟動的 App」。"
+                "Usage Access 尚未允許。"
 
             return
         }
@@ -320,7 +360,7 @@ class MainActivity : Activity() {
         ) {
 
             statusText.text =
-                "目前沒有取得可確認的前景 App。"
+                "目前無法從 Usage Access 取得可確認的前景 App。"
 
             return
         }
@@ -328,8 +368,18 @@ class MainActivity : Activity() {
         startSession(
             app
         )
+
+        statusText.text =
+            "自動辨識成功：" +
+                app.label
     }
 
+    /**
+     * 讓使用者選擇任何可見的 App。
+     *
+     * 不可啟動的 App 仍然顯示，
+     * 但不允許選擇。
+     */
     private fun showTargetList() {
 
         val apps =
@@ -340,14 +390,30 @@ class MainActivity : Activity() {
         ) {
 
             statusText.text =
-                "目前沒有找到可啟動的第三方 App。"
+                "目前沒有取得可顯示的 App。"
 
             return
         }
 
         val labels =
-            apps.map {
-                it.label
+            apps.map { app ->
+
+                if (
+                    app.launchable &&
+                    !app.protectedSystemApp
+                ) {
+
+                    app.label +
+                        "  [可啟動]"
+
+                } else {
+
+                    app.label +
+                        "  [" +
+                        app.statusText() +
+                        "]"
+                }
+
             }.toTypedArray()
 
         android.app.AlertDialog.Builder(
@@ -364,6 +430,20 @@ class MainActivity : Activity() {
                     apps[which]
 
                 if (
+                    !target.isEligibleTarget(
+                        packageName
+                    )
+                ) {
+
+                    statusText.text =
+                        target.label +
+                            "：" +
+                            target.statusText()
+
+                    return@setItems
+                }
+
+                if (
                     engine.selectTarget(
                         target
                     )
@@ -373,22 +453,27 @@ class MainActivity : Activity() {
                         target
 
                     statusText.text =
-                        "已選擇：" +
+                        "已選擇目標：" +
                             target.label
 
                     currentAppText.text =
                         buildString {
 
                             appendLine(
-                                "已選定目標："
+                                "目標 App："
                             )
 
                             appendLine(
                                 target.label
                             )
 
-                            append(
+                            appendLine(
                                 target.packageName
+                            )
+
+                            append(
+                                "狀態：" +
+                                    target.statusText()
                             )
                         }
                 }
@@ -396,6 +481,9 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /**
+     * 啟動使用者選定的 App。
+     */
     private fun launchSelected() {
 
         val target =
@@ -407,6 +495,20 @@ class MainActivity : Activity() {
 
             statusText.text =
                 "請先選擇目標 App。"
+
+            return
+        }
+
+        if (
+            !target.isEligibleTarget(
+                packageName
+            )
+        ) {
+
+            statusText.text =
+                target.label +
+                    "：" +
+                    target.statusText()
 
             return
         }
@@ -424,29 +526,108 @@ class MainActivity : Activity() {
             return
         }
 
-        val app =
-            CurrentAppInfo(
-                packageName =
-                    target.packageName,
+        statusText.text =
+            "已要求啟動：" +
+                target.label +
+                "。"
 
-                label =
-                    target.label,
+        /*
+         * 注意：
+         *
+         * 這裡不立即假設「目前前景就是 target」。
+         *
+         * 必須等 Android Usage Event
+         * 真正回報後才建立 Launcher Session。
+         *
+         * 這正是本次修正的核心。
+         */
+        currentAppText.text =
+            buildString {
 
-                detectedAt =
-                    System.currentTimeMillis(),
+                appendLine(
+                    "目標 App："
+                )
 
-                source =
-                    CurrentAppInfo.Source
-                        .LAUNCHER
-            )
+                appendLine(
+                    target.label
+                )
+
+                appendLine(
+                    target.packageName
+                )
+
+                append(
+                    "等待 Android 回報實際前景狀態……"
+                )
+            }
+    }
+
+    /**
+     * 驗證目前選定的 App 是否真的已經進入前景。
+     */
+    private fun detectSelectedTarget() {
+
+        val target =
+            currentTarget
+
+        if (
+            target == null
+        ) {
+
+            statusText.text =
+                "目前沒有選定目標 App。"
+
+            return
+        }
+
+        if (
+            !engine.usageAccessAvailable()
+        ) {
+
+            statusText.text =
+                "Usage Access 尚未允許。"
+
+            return
+        }
+
+        val detected =
+            engine.detectSelectedTarget()
+
+        if (
+            detected == null
+        ) {
+
+            val actual =
+                engine.lastDetectedApp()
+
+            statusText.text =
+                if (
+                    actual != null
+                ) {
+
+                    "目標是 " +
+                        target.label +
+                        "，但 Android 目前回報前景為 " +
+                        actual.label +
+                        "。"
+
+                } else {
+
+                    "目前尚未確認 " +
+                        target.label +
+                        " 已進入前景。"
+                }
+
+            return
+        }
 
         startSession(
-            app
+            detected
         )
 
         statusText.text =
-            "已啟動：" +
-                target.label
+            "智慧辨識成功：" +
+                detected.label
     }
 
     private fun startSession(
