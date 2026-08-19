@@ -8,8 +8,7 @@ data class AppTargetInfo(
 ) {
 
     fun isEligibleTarget(
-        guardianPackage:
-            String
+        ownPackageName: String
     ): Boolean {
 
         if (
@@ -20,33 +19,28 @@ data class AppTargetInfo(
 
         if (
             packageName ==
-            guardianPackage
+            ownPackageName
         ) {
             return false
         }
 
-        if (
-            !launchable
-        ) {
-            return false
-        }
-
-        /*
-         * 系統／廠商核心 App：
-         * 不作為一般第三方最佳化目標。
-         */
-        if (
-            protectedSystemApp
-        ) {
-            return false
-        }
-
-        return true
+        return launchable &&
+            !protectedSystemApp
     }
 
-    fun displayName():
+    fun statusText():
         String {
 
-        return "$label\n$packageName"
+        return when {
+
+            protectedSystemApp ->
+                "系統程式：無法由管家選擇與啟動"
+
+            !launchable ->
+                "目前無法選擇與啟動"
+
+            else ->
+                "可以選擇與啟動"
+        }
     }
 }
