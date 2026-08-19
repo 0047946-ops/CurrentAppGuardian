@@ -1,6 +1,7 @@
 package com.currentguardian.launcher
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.currentguardian.model.AppTargetInfo
@@ -17,31 +18,41 @@ class AppCatalog(
     fun getEligibleApps():
         List<AppTargetInfo> {
 
-        val applications =
-            try {
-
-                packageManager
-                    .getInstalledApplications(
-                        PackageManager.GET_META_DATA
-                    )
-
-            } catch (_: Throwable) {
-
-                emptyList()
-            }
-
         val result =
             mutableMapOf<String, AppTargetInfo>()
 
+        /*
+         * 取得具有 Launcher 入口的 App。
+         */
+        val launcherIntent =
+            Intent(
+                Intent.ACTION_MAIN
+            ).apply {
+
+                addCategory(
+                    Intent.CATEGORY_LAUNCHER
+                )
+            }
+
+        val activities =
+            packageManager
+                .queryIntentActivities(
+                    launcherIntent,
+                    PackageManager
+                        .MATCH_ALL
+                )
+
         for (
-            applicationInfo in applications
+            resolveInfo in activities
         ) {
 
-            if (
-                applicationInfo == null
-            ) {
-                continue
-            }
+            val activityInfo =
+                resolveInfo.activityInfo
+                    ?: continue
+
+            val applicationInfo =
+                activityInfo.applicationInfo
+                    ?: continue
 
             val packageName =
                 applicationInfo.packageName
@@ -54,9 +65,6 @@ class AppCatalog(
                 continue
             }
 
-            /*
-             * 不把 CurrentAppGuardian 自己列入可選目標。
-             */
             if (
                 packageName ==
                 context.packageName
@@ -65,45 +73,15 @@ class AppCatalog(
             }
 
             val label =
-                try {
-
-                    packageManager
-                        .getApplicationLabel(
-                            applicationInfo
-                        )
-                        ?.toString()
-                        ?.trim()
-                        ?.takeIf {
-                            it.isNotBlank()
-                        }
-                        ?: packageName
-
-                } catch (_: Throwable) {
-
+                getLabel(
+                    applicationInfo,
                     packageName
-                }
-
-            /*
-             * 有 Launch Intent = 一般使用者可直接啟動的 App。
-             *
-             * 沒有 Launch Intent 的程式仍然保留在清單，
-             * 但 launchable=false。
-             */
-            val launchIntent =
-                try {
-
-                    packageManager
-                        .getLaunchIntentForPackage(
-                            packageName
-                        )
-
-                } catch (_: Throwable) {
-
-                    null
-                }
+                )
 
             val launchable =
-                launchIntent != null
+                canLaunch(
+                    packageName
+                )
 
             val protectedSystemApp =
                 isProtectedSystemApp(
@@ -128,26 +106,68 @@ class AppCatalog(
                 )
         }
 
-        /*
-         * 可啟動的一般 App 優先。
-         * 不可啟動的項目仍然保留，讓使用者知道它存在。
-         */
         return result
             .values
             .sortedWith(
                 compareBy<AppTargetInfo> {
-                    if (it.launchable) 0 else 1
+                    !it.launchable
                 }.thenBy {
-                    it.label.lowercase()
+                    it.label
+                        .lowercase()
                 }
             )
+    }
+
+    private fun getLabel(
+        applicationInfo:
+            ApplicationInfo,
+        packageName:
+            String
+    ): String {
+
+        return try {
+
+            packageManager
+                .getApplicationLabel(
+                    applicationInfo
+                )
+                .toString()
+                .takeIf {
+                    it.isNotBlank()
+                }
+                ?: packageName
+
+        } catch (_: Throwable) {
+
+            packageName
+        }
+    }
+
+    private fun canLaunch(
+        packageName:
+            String
+    ): Boolean {
+
+        return try {
+
+            val launchIntent =
+                packageManager
+                    .getLaunchIntentForPackage(
+                        packageName
+                    )
+
+            launchIntent != null
+
+        } catch (_: Throwable) {
+
+            false
+        }
     }
 
     private fun isProtectedSystemApp(
         applicationInfo:
             ApplicationInfo
-    ):
-        Boolean {
+    ): Boolean {
 
         val flags =
             applicationInfo.flags
