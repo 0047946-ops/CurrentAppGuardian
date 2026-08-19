@@ -39,6 +39,9 @@ class CurrentAppEngine(
     private var selectedTarget:
         AppTargetInfo? = null
 
+    private var lastDetectedApp:
+        CurrentAppInfo? = null
+
     private var lastLaunchRequest:
         Long = 0L
 
@@ -49,6 +52,9 @@ class CurrentAppEngine(
             .hasUsageAccess()
     }
 
+    /**
+     * 自動辨識 Android 實際前景 App。
+     */
     fun detectAutomatically():
         CurrentAppInfo? {
 
@@ -58,8 +64,45 @@ class CurrentAppEngine(
             return null
         }
 
-        return usageDetector
-            .detect()
+        val detected =
+            usageDetector.detect()
+                ?: return null
+
+        lastDetectedApp =
+            detected
+
+        return detected
+    }
+
+    /**
+     * 驗證使用者選擇的目標 App
+     * 是否已經真的進入前景。
+     */
+    fun detectSelectedTarget():
+        CurrentAppInfo? {
+
+        val target =
+            selectedTarget
+                ?: return null
+
+        val detected =
+            usageDetector
+                .detectExpectedTarget(
+                    expectedPackageName =
+                        target.packageName
+                )
+                ?: return null
+
+        lastDetectedApp =
+            detected
+
+        return detected
+    }
+
+    fun lastDetectedApp():
+        CurrentAppInfo? {
+
+        return lastDetectedApp
     }
 
     fun availableTargets():
@@ -112,8 +155,10 @@ class CurrentAppEngine(
         if (
             result.success
         ) {
+
             lastLaunchRequest =
-                SystemClock.elapsedRealtime()
+                SystemClock
+                    .elapsedRealtime()
         }
 
         return result
