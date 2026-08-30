@@ -1,9 +1,11 @@
 package com.guardianapp.videoplayer
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.PiPParams
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -16,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.ui.PlayerView
 import com.guardianapp.videoplayer.core.*
@@ -26,10 +29,16 @@ import kotlin.math.abs
 class MainActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private var player: ExoPlayer? = null
+    private lateinit var trackSelector: DefaultTrackSelector
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var playbackStateManager: PlaybackStateManager
     private lateinit var playbackErrorHandler: PlaybackErrorHandler
     private lateinit var smartBufferingManager: SmartBufferingManager
+    private lateinit var preloadManager: PreloadManager
+    private lateinit var pipManager: PictureInPictureManager
+    private lateinit var subtitleManager: SubtitleManager
+    private lateinit var downloadManager: DownloadManager
+    private lateinit var historyManager: HistoryManager
     private lateinit var gestureDetector: GestureDetector
 
     private lateinit var btnPlayPause: ImageButton
@@ -39,6 +48,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnQuality: ImageButton
     private lateinit var btnSpeed: ImageButton
     private lateinit var btnYouTube: ImageButton
+    private lateinit var btnPiP: ImageButton
+    private lateinit var btnSubtitle: ImageButton
+    private lateinit var btnDownload: ImageButton
+    private lateinit var btnHistory: ImageButton
     private lateinit var seekBar: SeekBar
     private lateinit var tvCurrentTime: TextView
     private lateinit var tvDuration: TextView
@@ -51,6 +64,8 @@ class MainActivity : AppCompatActivity() {
     private var currentSpeed = 1.0f
     private var isSeeking = false
     private var progressUpdateJob: kotlinx.coroutines.Job? = null
+    private var currentVideoUrl = ""
+    private var currentVideoTitle = "Video"
 
     // Gesture variables
     private var lastTouchY = 0f
@@ -67,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         initializeGestureDetector()
         loadLastPlaybackState()
         startProgressUpdate()
+        setupPiPListener()
     }
 
     private fun initializeViews() {
@@ -83,7 +99,23 @@ class MainActivity : AppCompatActivity() {
         tvDuration = findViewById(R.id.tvDuration)
         progressBuffering = findViewById(R.id.progressBuffering)
 
-        // Create text views for quality and speed display
+        btnPiP = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_view)
+            contentDescription = "Picture in Picture"
+        }
+        btnSubtitle = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_info_details)
+            contentDescription = "Subtitle"
+        }
+        btnDownload = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_save)
+            contentDescription = "Download"
+        }
+        btnHistory = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_agenda)
+            contentDescription = "History"
+        }
+
         tvQualityDisplay = TextView(this).apply {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
             textSize = 14f
@@ -95,7 +127,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
             textSize = 14f
             setTextColor(android.graphics.Color.WHITE)
-            text = "1.0x"
+            text = "1.0×"
             visibility = View.GONE
         }
 
@@ -105,19 +137,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initializePlayer() {
+        trackSelector = DefaultTrackSelector(this)
         player = ExoPlayer.Builder(this)
+            .setTrackSelector(trackSelector)
             .setBufferingParameters(
                 androidx.media3.exoplayer.LoadControl.DEFAULT.bufferingParameters
                     .buildUpon()
-                    .setTargetBufferBytes(20 * 1000 * 1000) // 20MB
-                    .setMaxBufferMs(30000) // 30 seconds max
-                    .setMinBufferMs(2500)  // 2.5 seconds min
+                    .setTargetBufferBytes(20 * 1000 * 1000)
+                    .setMaxBufferMs(30000)
+                    .setMinBufferMs(2500)
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build()
             )
             .build()
             .apply {
-                // Enable hardware decoding priority
                 setPreferredAudioLanguage("en")
                 playerView.player = this
                 addListener(playerListener)
@@ -128,6 +161,11 @@ class MainActivity : AppCompatActivity() {
         networkMonitor = NetworkMonitor(this)
         playbackErrorHandler = PlaybackErrorHandler(player!!, networkMonitor, lifecycleScope)
         smartBufferingManager = SmartBufferingManager(player!!)
+        preloadManager = PreloadManager(player!!)
+        pipManager = PictureInPictureManager(this, player!!)
+        subtitleManager = SubtitleManager(player!!, trackSelector)
+        downloadManager = DownloadManager(this)
+        historyManager = HistoryManager(this)
     }
 
     private fun initializeNetworkMonitoring() {
@@ -143,7 +181,6 @@ class MainActivity : AppCompatActivity() {
     private fun initializeGestureDetector() {
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                // Double tap to toggle play/pause
                 if (player?.isPlaying == true) {
                     player?.pause()
                 } else {
@@ -165,13 +202,10 @@ class MainActivity : AppCompatActivity() {
                     val deltaY = event.y - lastTouchY
                     val deltaX = event.x - lastTouchX
 
-                    // Vertical swipe on left side = brightness, right side = volume
                     if (abs(deltaY) > gestureThreshold) {
                         if (event.x < playerView.width / 2) {
-                            // Left side - brightness
                             handleBrightnessGesture(deltaY)
                         } else {
-                            // Right side - volume
                             handleVolumeGesture(deltaY)
                         }
                         lastTouchY = event.y
@@ -188,7 +222,6 @@ class MainActivity : AppCompatActivity() {
         val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
         val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
 
-        // Swipe up = increase volume, swipe down = decrease volume
         val newVolume = if (deltaY < 0) {
             (currentVolume + 1).coerceAtMost(maxVolume)
         } else {
@@ -203,9 +236,8 @@ class MainActivity : AppCompatActivity() {
         val params = window.attributes
         var brightness = params.screenBrightness
 
-        if (brightness < 0) brightness = 0.5f // Default to 50%
+        if (brightness < 0) brightness = 0.5f
 
-        // Swipe up = increase brightness, swipe down = decrease brightness
         brightness = if (deltaY < 0) {
             (brightness + 0.05f).coerceAtMost(1f)
         } else {
@@ -240,7 +272,6 @@ class MainActivity : AppCompatActivity() {
                     currentQuality = state.selectedQuality
                     currentSpeed = state.playbackSpeed
                 } else {
-                    // Default to YouTube
                     openYouTubeFirst()
                 }
             }
@@ -252,6 +283,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playVideo(url: String) {
+        currentVideoUrl = url
         val mediaItem = MediaItem.fromUri(url)
         player?.apply {
             setMediaItem(mediaItem)
@@ -290,6 +322,22 @@ class MainActivity : AppCompatActivity() {
 
         btnYouTube.setOnClickListener {
             startActivity(Intent(this, YouTubeActivity::class.java))
+        }
+
+        btnPiP.setOnClickListener {
+            enablePictureInPicture()
+        }
+
+        btnSubtitle.setOnClickListener {
+            showSubtitleOptions()
+        }
+
+        btnDownload.setOnClickListener {
+            downloadCurrentVideo()
+        }
+
+        btnHistory.setOnClickListener {
+            showWatchHistory()
         }
     }
 
@@ -339,11 +387,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyQualitySettings(quality: String) {
-        // Quality adjustment logic - simulated
-        // In production, you would adjust track selection based on quality
         when (quality) {
             "1080p" -> {
-                smartBufferingManager.updateBufferingStrategy(10f, 5f) // 10 Mbps network, 5 Mbps video
+                smartBufferingManager.updateBufferingStrategy(10f, 5f)
             }
             "720p" -> {
                 smartBufferingManager.updateBufferingStrategy(5f, 2.5f)
@@ -355,7 +401,6 @@ class MainActivity : AppCompatActivity() {
                 smartBufferingManager.updateBufferingStrategy(1.5f, 0.8f)
             }
             else -> {
-                // Auto - use network monitor
                 val bandwidth = networkMonitor.getEstimatedBandwidthMbps()
                 smartBufferingManager.updateBufferingStrategy(bandwidth, 2.5f)
             }
@@ -402,12 +447,99 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun enablePictureInPicture() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val width = pipManager.getPiPState().pipWidth
+            val height = pipManager.getPiPState().pipHeight
+            val pipParams = PiPParams.Builder()
+                .setAspectRatio(android.util.Rational(width, height))
+                .build()
+            enterPictureInPictureMode(pipParams)
+            pipManager.enablePiP()
+        }
+    }
+
+    private fun setupPiPListener() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Picture in Picture mode listener
+        }
+    }
+
+    private fun showSubtitleOptions() {
+        val languages = subtitleManager.getAvailableLanguages().toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Subtitles")
+            .setSingleChoiceItems(languages, 0) { dialog, which ->
+                subtitleManager.setSubtitleLanguage(languages[which])
+                subtitleManager.enableSubtitles(languages[which])
+                dialog.dismiss()
+            }
+            .setNegativeButton("Off") { dialog, _ ->
+                subtitleManager.disableSubtitles()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    private fun downloadCurrentVideo() {
+        if (currentVideoUrl.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("Download")
+                .setMessage("No video is currently playing")
+                .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+                .show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Download Video")
+            .setMessage("Download: $currentVideoTitle?")
+            .setPositiveButton("Yes") { dialog, _ ->
+                lifecycleScope.launch {
+                    downloadManager.startDownload(currentVideoUrl, currentVideoTitle)
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("No") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
+
+    private fun showWatchHistory() {
+        lifecycleScope.launch {
+            historyManager.getHistory().collect { history ->
+                val items = history.map { "${it.videoTitle} - ${formatTime(it.watchedDuration)}" }.toTypedArray()
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Watch History")
+                    .setItems(items) { _, which ->
+                        val selected = history[which]
+                        playVideo(selected.videoUrl)
+                    }
+                    .setNegativeButton("Clear") { dialog, _ ->
+                        lifecycleScope.launch {
+                            historyManager.clearHistory()
+                        }
+                        dialog.dismiss()
+                    }
+                    .show()
+            }
+        }
+    }
+
     private fun startProgressUpdate() {
         progressUpdateJob = lifecycleScope.launch {
             while (true) {
-                delay(500) // Update every 500ms
+                delay(500)
                 if (!isSeeking) {
                     updateUIState()
+                    if (player?.isPlaying == true && (player?.currentPosition ?: 0L) > 5000) {
+                        lifecycleScope.launch {
+                            historyManager.addToHistory(
+                                currentVideoUrl,
+                                currentVideoTitle,
+                                player?.currentPosition ?: 0L
+                            )
+                        }
+                    }
                 }
             }
         }
