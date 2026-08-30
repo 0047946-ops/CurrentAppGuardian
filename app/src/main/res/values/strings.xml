@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <resources>
-
-    <string name="app_name">
-        Current App Guardian
-    </string>
-
+    <string name="app_name">CurrentAppGuardian</string>
+    <string name="app_description">High-performance video player with smart buffering and YouTube integration</string>
 </resources>
